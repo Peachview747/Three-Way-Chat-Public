@@ -24,6 +24,7 @@ jobs:
           swiftc -parse-as-library three-way-phone/ios/App/ConversationStore.swift three-way-phone/tests/StoreTests.swift -o /tmp/three-way-store-tests
           /tmp/three-way-store-tests
       - name: Build and validate sideload IPA
+        id: ipa
         run: bash three-way-phone/scripts/build_ipa.sh
       - name: Verify connector in iPhone simulator
         run: |
@@ -31,6 +32,7 @@ jobs:
           xcodebuild -project three-way-phone/ios/ThreeWayPhone.xcodeproj -scheme ThreeWayPhone -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath three-way-phone/.build/ConnectorTests.xcresult CODE_SIGNING_ALLOWED=NO test
           xcrun xcresulttool export attachments --path three-way-phone/.build/ConnectorTests.xcresult --output-path three-way-phone/.build/connector-screenshots
       - name: Upload IPA and validation
+        if: ${{ !cancelled() && steps.ipa.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: AI-Room-iPhone-0.1.0-Build-6
