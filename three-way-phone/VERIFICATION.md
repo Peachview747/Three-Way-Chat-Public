@@ -10,7 +10,7 @@ Added an in-app setup guide and manual browser-pairing code controls. Updated th
 
 ## Build 4 URL update
 
-The connector validation, displayed website, relay test origin, and Worker name now target `https://ai.jch.workers.dev/`. Packaging and Actions artifact names use Build 4. Import an updated private setup file after updating in place. Deployment to the `jch` Cloudflare account and a new device IPA build require external credentials/macOS tooling; local relay tests do not establish live deployment or device behavior. Background handling is unchanged.
+The connector validation, displayed website, relay test origin, and Worker name now target `https://ai.jch76.workers.dev/`. Packaging and Actions artifact names use Build 4. Import an updated private setup file after updating in place. Deployment to the `jch` Cloudflare account and a new device IPA build require external credentials/macOS tooling; local relay tests do not establish live deployment or device behavior. Background handling is unchanged.
 
 ## Earlier builds
 

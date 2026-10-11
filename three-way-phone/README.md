@@ -1,8 +1,12 @@
 # AI Room phone connector
 
-AI Room's iPhone app connects the phone to Cloudflare and shows setup, connection status, and the private website link. The chat dashboard lives at https://ai.jch.workers.dev/. Build 3 removes the embedded dashboard from the IPA. Your iPhone owns the conversations and maintains an outbound authenticated WebSocket. Your laptop can be off while the connector remains open on the phone.
+AI Room's iPhone app connects the phone to Cloudflare and shows setup, connection status, and the private website link. The chat dashboard lives at https://ai.jch76.workers.dev/. Build 3 removes the embedded dashboard from the IPA. Your iPhone owns the conversations and maintains an outbound authenticated WebSocket. Your laptop can be off while the connector remains open on the phone.
 
 GPT and Claude are not connected in this milestone. The website saves prompts with their chosen recipients; assistant sign-in and replies are not implemented. There are no model API calls or Etsy publishing operations.
+
+## Current address (Build 7)
+
+AI Room now uses `https://ai.jch76.workers.dev/`. Cloudflare’s shared account subdomain is `jch76`; Video Pilot’s Worker is now `https://tv.jch76.workers.dev/`. Import the matching private phone setup file after installing Build 7.
 
 ## App name (Build 6)
 
@@ -10,7 +14,7 @@ AI Room is the new display name. Bundle identifier, Keychain service, history pa
 
 ## URL migration (Build 4)
 
-Build 4 targets `https://ai.jch.workers.dev/`. Deploy the `ai` Worker in the Cloudflare account whose workers.dev subdomain is `jch`; changing the Worker name does not change the account subdomain. Configure the existing room ID and phone/browser key hashes securely at deployment. Import an updated private setup JSON with `server` set to `https://ai.jch.workers.dev/` (including the trailing slash), then share the new private website link. Old-site setup files are rejected; stored conversations stay on the phone when the app is updated in place. No private setup files or keys belong in this public repository.
+Build 4 targets `https://ai.jch76.workers.dev/`. Deploy the `ai` Worker in the Cloudflare account whose workers.dev subdomain is `jch76`; changing the Worker name does not change the account subdomain. Configure the existing room ID and phone/browser key hashes securely at deployment. Import an updated private setup JSON with `server` set to `https://ai.jch76.workers.dev/` (including the trailing slash), then share the new private website link. Old-site setup files are rejected; stored conversations stay on the phone when the app is updated in place. No private setup files or keys belong in this public repository.
 
 The background behavior is unchanged by this URL update.
 

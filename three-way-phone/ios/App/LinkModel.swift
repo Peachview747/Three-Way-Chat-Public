@@ -10,7 +10,7 @@ struct LinkProfile: Codable {
     let browserKey: String
 
     func validate() throws {
-        guard version == 1, server == "https://ai.jch.workers.dev/",
+        guard version == 1, server == "https://ai.jch76.workers.dev/",
               UUID(uuidString: room) != nil,
               phoneKey.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil,
               browserKey.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil else {

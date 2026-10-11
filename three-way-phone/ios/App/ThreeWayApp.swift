@@ -72,7 +72,7 @@ private struct ConnectorView: View {
                 }
 
                 Section {
-                    Text("ai.jch.workers.dev")
+                    Text("ai.jch76.workers.dev")
                         .font(.subheadline)
                         .textSelection(.enabled)
                     if let profile = model.profile {
@@ -131,7 +131,7 @@ private struct ConnectorView: View {
                 NavigationStack {
                     List {
                         Section("1. Get your private setup file") {
-                            Text("The person who manages your AI Room website must provide AI-Room-Phone-Setup.json for https://ai.jch.workers.dev/. Save it to Files on this iPhone.")
+                            Text("The person who manages your AI Room website must provide AI-Room-Phone-Setup.json for https://ai.jch76.workers.dev/. Save it to Files on this iPhone.")
                             Text("If you manage the website, the file must match your deployed room and pairing credentials. Installing the app or creating a GitHub repository does not create this file. Do not put it in the public repository.")
                         }
                         Section("2. Import and connect") {
@@ -144,7 +144,7 @@ private struct ConnectorView: View {
                             Text("Under Chat website, expand Pair a browser with codes instead. Copy the room code into Room code and the browser pairing code into Browser pairing code, then select Pair this browser. Do not use the phone’s connection key.")
                         }
                         Section("If you cannot connect") {
-                            Text("No setup file: ask your website manager for it. An old-site setup file: request an updated file for ai.jch.workers.dev. Phone offline: keep this connector open and check its connection status. Your conversations stay on this iPhone.")
+                            Text("No setup file: ask your website manager for it. An old-site setup file: request an updated file for ai.jch76.workers.dev. Phone offline: keep this connector open and check its connection status. Your conversations stay on this iPhone.")
                         }
                     }
                     .navigationTitle("Setup and browser pairing")
