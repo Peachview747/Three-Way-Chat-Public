@@ -120,7 +120,7 @@ $('connections-button').onclick = () => {
 };
 $('about-button').onclick = () => $('about').showModal();
 $('export').onclick = async () => {
-  try { const result = await api('export'); if (native) { await api('share'); return; } const url = URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'})); const link = document.createElement('a'); link.href=url; link.download='three-way-conversations.json'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+  try { const result = await api('export'); if (native) { await api('share'); return; } const url = URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'})); const link = document.createElement('a'); link.href=url; link.download='ai-room-conversations.json'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
   catch(e) { notice('Could not export conversations.'); }
 };
 async function pair(room, key) {

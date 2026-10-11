@@ -18,14 +18,14 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.peachview.threeway.phone
         MARKETING_VERSION: '0.1.0'
-        CURRENT_PROJECT_VERSION: '5'
+        CURRENT_PROJECT_VERSION: '6'
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
     info:
       path: Generated/Info.plist
       properties:
-        CFBundleDisplayName: Three Way
-        CFBundleName: Three Way
+        CFBundleDisplayName: AI Room
+        CFBundleName: AI Room
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}

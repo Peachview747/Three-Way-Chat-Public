@@ -9,4 +9,4 @@ cd ios
 xcodegen generate
 xcodebuild -project ThreeWayPhone.xcodeproj -scheme ThreeWayPhone -configuration Release -destination 'generic/platform=iOS' -archivePath "$ROOT/.build/ThreeWayPhone.xcarchive" CODE_SIGNING_ALLOWED=NO archive
 cd "$ROOT"
-python3 scripts/package_ipa.py .build/ThreeWayPhone.xcarchive .build/Three-Way-0.1.0-Build-5.ipa
+python3 scripts/package_ipa.py .build/ThreeWayPhone.xcarchive .build/AI-Room-0.1.0-Build-6.ipa

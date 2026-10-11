@@ -95,7 +95,7 @@ export class PhoneRoom extends DurableObject {
   }
   disconnected(ws) {
     for (const [id, pending] of this.pending) if (pending.ws === ws) {
-      this.finish(id, json({error:'The iPhone disconnected. Reopen Three Way and retry.'},503));
+      this.finish(id, json({error:'The iPhone disconnected. Reopen AI Room and retry.'},503));
     }
   }
   async fetch(request) {
@@ -112,7 +112,7 @@ export class PhoneRoom extends DurableObject {
       return new Response(null,{status:101,webSocket:client});
     }
     const ws = this.phones().find(phone => phone.deserializeAttachment()?.ready);
-    if (!ws) return json({error:'Open Three Way on your iPhone and connect. Your phone hosts this room.'},503);
+    if (!ws) return json({error:'Open AI Room on your iPhone and connect. Your phone hosts this room.'},503);
     if (this.pending.size >= 8) return json({error:'The phone is busy. Retry in a moment.'},429);
     let body;
     try { body = request.method === 'GET' ? {room:url.searchParams.get('room') || ''} : await readJSON(request); }
@@ -121,10 +121,10 @@ export class PhoneRoom extends DurableObject {
     // The phone receives a named room operation, never an arbitrary URL or command.
     const action = url.pathname.slice('/api/'.length), id = crypto.randomUUID();
     return new Promise(resolve => {
-      const timer = setTimeout(() => this.finish(id,json({error:'The phone did not answer. Keep Three Way open, then retry.'},504)),10_000);
+      const timer = setTimeout(() => this.finish(id,json({error:'The phone did not answer. Keep AI Room open, then retry.'},504)),10_000);
       this.pending.set(id,{resolve,timer,ws});
       try { ws.send(JSON.stringify({type:'request',id,action,body})); }
-      catch { this.finish(id,json({error:'The phone disconnected. Reopen Three Way.'},503)); }
+      catch { this.finish(id,json({error:'The phone disconnected. Reopen AI Room.'},503)); }
     });
   }
   webSocketMessage(ws, raw) {

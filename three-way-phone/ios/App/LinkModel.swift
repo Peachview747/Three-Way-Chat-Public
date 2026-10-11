@@ -14,7 +14,7 @@ struct LinkProfile: Codable {
               UUID(uuidString: room) != nil,
               phoneKey.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil,
               browserKey.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil else {
-            throw LinkFailure.message("Choose the Three Way Phone Setup file for this website.")
+            throw LinkFailure.message("Choose the AI Room Phone Setup file for this website.")
         }
     }
     var website: URL {
@@ -61,7 +61,7 @@ final class LinkModel: ObservableObject {
     @Published private(set) var connected = false
     @Published private(set) var wantsConnection = false
     @Published private(set) var status = "Pair your iPhone"
-    @Published private(set) var detail = "Import your Three Way Phone Setup file to begin."
+    @Published private(set) var detail = "Import your AI Room Phone Setup file to begin."
     @Published var notice = ""
     @Published var keepScreenOn = true { didSet { updateScreen() } }
     let store = ConversationStore()
@@ -102,7 +102,7 @@ final class LinkModel: ObservableObject {
         if active && wantsConnection { startRunner() }
         else if !active {
             cancelConnection()
-            if wantsConnection { status = "Paused"; detail = "Reopen Three Way to reconnect your website." }
+            if wantsConnection { status = "Paused"; detail = "Reopen AI Room to reconnect your website." }
         }
         updateScreen()
     }

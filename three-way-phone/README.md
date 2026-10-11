@@ -1,8 +1,12 @@
-# Three Way phone connector
+# AI Room phone connector
 
-Three Way's iPhone app connects the phone to Cloudflare and shows setup, connection status, and the private website link. The chat dashboard lives at https://ai.jch.workers.dev/. Build 3 removes the embedded dashboard from the IPA. Your iPhone owns the conversations and maintains an outbound authenticated WebSocket. Your laptop can be off while the connector remains open on the phone.
+AI Room's iPhone app connects the phone to Cloudflare and shows setup, connection status, and the private website link. The chat dashboard lives at https://ai.jch.workers.dev/. Build 3 removes the embedded dashboard from the IPA. Your iPhone owns the conversations and maintains an outbound authenticated WebSocket. Your laptop can be off while the connector remains open on the phone.
 
 GPT and Claude are not connected in this milestone. The website saves prompts with their chosen recipients; assistant sign-in and replies are not implemented. There are no model API calls or Etsy publishing operations.
+
+## App name (Build 6)
+
+AI Room is the new display name. Bundle identifier, Keychain service, history path, relay protocol, and internal project names remain unchanged so in-place updates preserve data. Older Three-Way-Phone-Setup.json files remain importable when their contents target the current website.
 
 ## URL migration (Build 4)
 
@@ -16,13 +20,13 @@ The connector includes **How to set up and pair a browser**, which explains obta
 
 ## Install and connect
 
-1. Use the IPA from the public GitHub Actions build with your normal personal sideload method, or update the existing Three Way guest app inside LiveContainer. Requires iOS 17 or later. Preserve the existing app's data container when updating.
-2. Open **Three Way Connector**. Tap **Import phone setup** and choose the private `Three-Way-Phone-Setup.json` supplied separately. Importing automatically connects. Existing pairing remains in the Keychain; tap **Connect to Cloudflare** if it was already imported.
+1. Use the IPA from the public GitHub Actions build with your normal personal sideload method, or update the existing AI Room guest app inside LiveContainer. Requires iOS 17 or later. Preserve the existing app's data container when updating.
+2. Open **AI Room Connector**. Tap **Import phone setup** and choose the private `AI-Room-Phone-Setup.json` supplied separately. Importing automatically connects. Existing pairing remains in the Keychain; tap **Connect to Cloudflare** if it was already imported.
 3. Wait for **Connected to Cloudflare**. Keep the connector open; screen-awake is enabled during the connection.
 4. Use **Share private website link** or **Copy private website link** and open it in a browser on another device. The public URL shows the dashboard; the private link pairs that browser to your phone's room for eight hours.
 5. Use the website for conversations, prompts, new rooms and exports.
 
-Locking the hosting phone or switching apps pauses this connector. Reopen Three Way to reconnect. LiveContainer background behavior is not verified. This build adds no background execution mode.
+Locking the hosting phone or switching apps pauses this connector. Reopen AI Room to reconnect. LiveContainer background behavior is not verified. This build adds no background execution mode.
 
 Pairing files, private links, conversations, credentials and signing certificates must never enter this public repository.
 
@@ -46,4 +50,4 @@ The feature branch `codex/three-way-phone-link` triggers `.github/workflows/thre
 
 On macOS: `bash scripts/build_ipa.sh`. For Worker tests: `npm ci && npm test`. `python3 scripts/prepare_assets.py` generates Cloudflare's dashboard assets only. Worker deployment is separate and requires the owner's Cloudflare account; no deploy credentials or signing secrets enter Actions.
 
-The Video Pilot Build 49 IPA informed the phone-to-Cloudflare hosting pattern. Three Way has its own bundle identifier, Keychain service and pairing keys. This update does not change Video Pilot.
+The Video Pilot Build 49 IPA informed the phone-to-Cloudflare hosting pattern. AI Room has its own bundle identifier, Keychain service and pairing keys. This update does not change Video Pilot.

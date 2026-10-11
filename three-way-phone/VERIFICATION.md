@@ -1,5 +1,9 @@
 # Verification
 
+## Build 6 app rename
+
+Display name, connector text, website branding, export filename, and IPA artifact names use AI Room. Stable internal identifiers and conversation storage are preserved. Native build validation remains pending on macOS.
+
 ## Build 5 setup guidance
 
 Added an in-app setup guide and manual browser-pairing code controls. Updated the website dialog and regenerated its deployed assets. The connector UI test now opens and dismisses setup help before testing import cancellation. Native UI tests require the macOS Actions runner and have not been run in this Linux environment.

@@ -35,7 +35,7 @@ private struct ConnectorView: View {
                             .foregroundStyle(green)
                         Text("Your chat lives on the website.")
                             .font(.title2.weight(.semibold))
-                        Text("This app connects your iPhone to Three Way. Use the dashboard in your browser.")
+                        Text("This app connects your iPhone to AI Room. Use the dashboard in your browser.")
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
@@ -43,7 +43,7 @@ private struct ConnectorView: View {
 
                 Section("Set up your phone and browser") {
                     Text(model.profile == nil
-                         ? "First, save your private Three-Way-Phone-Setup.json file in the Files app on this iPhone."
+                         ? "First, save your private AI-Room-Phone-Setup.json file in the Files app on this iPhone."
                          : "Your phone setup is saved. Connect, then share the private website link with your other device.")
                     Button("How to set up and pair a browser", systemImage: "questionmark.circle") {
                         showingSetupHelp = true
@@ -111,8 +111,8 @@ private struct ConnectorView: View {
                 }
 
                 Section("While using the website") {
-                    Text("Keep Three Way open on this iPhone. Use the private website link on another device; your laptop can be off.")
-                    Text("Locking the phone or switching apps pauses this connector. Reopen Three Way to reconnect. Conversations stay saved on this iPhone.")
+                    Text("Keep AI Room open on this iPhone. Use the private website link on another device; your laptop can be off.")
+                    Text("Locking the phone or switching apps pauses this connector. Reopen AI Room to reconnect. Conversations stay saved on this iPhone.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -125,13 +125,13 @@ private struct ConnectorView: View {
                     Section { Text(model.notice).accessibilityIdentifier("connector-notice") }
                 }
             }
-            .navigationTitle("Three Way Connector")
+            .navigationTitle("AI Room Connector")
             .tint(green)
             .sheet(isPresented: $showingSetupHelp) {
                 NavigationStack {
                     List {
                         Section("1. Get your private setup file") {
-                            Text("The person who manages your Three Way website must provide Three-Way-Phone-Setup.json for https://ai.jch.workers.dev/. Save it to Files on this iPhone.")
+                            Text("The person who manages your AI Room website must provide AI-Room-Phone-Setup.json for https://ai.jch.workers.dev/. Save it to Files on this iPhone.")
                             Text("If you manage the website, the file must match your deployed room and pairing credentials. Installing the app or creating a GitHub repository does not create this file. Do not put it in the public repository.")
                         }
                         Section("2. Import and connect") {
@@ -166,11 +166,11 @@ private struct ConnectorView: View {
                             model.connect()
                         }
                     } catch {
-                        model.notice = "Could not import setup. Choose the Three Way Phone Setup JSON file."
+                        model.notice = "Could not import setup. Choose the AI Room Phone Setup JSON file."
                     }
                 case .failure(let error):
                     if (error as NSError).code != NSUserCancelledError {
-                        model.notice = "Could not import setup. Choose the Three Way Phone Setup JSON file."
+                        model.notice = "Could not import setup. Choose the AI Room Phone Setup JSON file."
                     }
                 }
             }

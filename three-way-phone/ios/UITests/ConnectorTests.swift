@@ -6,7 +6,7 @@ final class ConnectorTests: XCTestCase {
         app.launch()
         let setup = app.buttons["import-setup"]
         XCTAssertTrue(setup.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.navigationBars["Three Way Connector"].exists)
+        XCTAssertTrue(app.navigationBars["AI Room Connector"].exists)
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "connection-status").firstMatch.exists)
         XCTAssertTrue(app.buttons["connection-button"].exists)
         XCTAssertFalse(app.buttons["connection-button"].isEnabled)
@@ -15,7 +15,7 @@ final class ConnectorTests: XCTestCase {
         XCTAssertFalse(app.buttons["Send message"].exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Three Way Connector"
+        screenshot.name = "AI Room Connector"
         screenshot.lifetime = .keepAlways
         add(screenshot)
 

@@ -1,4 +1,4 @@
-name: Three Way iPhone host build
+name: AI Room iPhone host build
 on:
   push:
     branches: ['codex/three-way-phone-link']
@@ -33,10 +33,10 @@ jobs:
       - name: Upload IPA and validation
         uses: actions/upload-artifact@v4
         with:
-          name: Three-Way-iPhone-0.1.0-Build-5
+          name: AI-Room-iPhone-0.1.0-Build-6
           path: |
-            three-way-phone/.build/Three-Way-0.1.0-Build-5.ipa
-            three-way-phone/.build/Three-Way-0.1.0-Build-5.json
+            three-way-phone/.build/AI-Room-0.1.0-Build-6.ipa
+            three-way-phone/.build/AI-Room-0.1.0-Build-6.json
             three-way-phone/.build/connector-screenshots
           if-no-files-found: error
           retention-days: 7
