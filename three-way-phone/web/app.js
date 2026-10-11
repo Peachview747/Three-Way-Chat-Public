@@ -16,7 +16,7 @@ window.threeWayReceive = encoded => {
 async function api(action, body = {}) {
   if (native) return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
-    const timer = setTimeout(() => { waiting.delete(id); reject(new Error('The phone did not respond.')); }, 15000);
+    const timer = setTimeout(() => { waiting.delete(id); reject(new Error('The host did not respond.')); }, 15000);
     waiting.set(id, {resolve, reject, timer});
     window.webkit.messageHandlers.threeway.postMessage({id, action, body});
   });
@@ -65,7 +65,7 @@ function render(state) {
       const heading = document.createElement('div'); heading.className = 'message-heading';
       const name = document.createElement('span'); name.textContent = label(m.author); heading.append(name);
       const time = document.createElement('time'); time.textContent = new Date(m.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); heading.append(time);
-      if (m.status !== 'complete') { const status = document.createElement('span'); status.className = 'status '+m.status; status.textContent = {working:'Replying',interrupted:'Stopped',error:'Incomplete',saved:'Saved on iPhone'}[m.status] || m.status; heading.append(status); }
+      if (m.status !== 'complete') { const status = document.createElement('span'); status.className = 'status '+m.status; status.textContent = {working:'Replying',interrupted:'Stopped',error:'Incomplete',saved:'Saved on Pi'}[m.status] || m.status; heading.append(status); }
       const text = document.createElement('div'); text.className = 'message-text'; text.textContent = m.text || (m.status === 'working' ? 'Thinking…' : 'No reply saved.');
       content.append(heading,text); article.append(avatar,content); $('messages').append(article);
     }
@@ -95,7 +95,7 @@ $('composer').onsubmit = async event => {
     const signature = JSON.stringify({text,target,room,rounds:Number($('rounds').value)});
     if (pendingSend?.signature !== signature) pendingSend = {signature,id:crypto.randomUUID()};
     const result = await post('send',{text,target,room,rounds:Number($('rounds').value),request_id:pendingSend.id});
-    pendingSend = null; $('input').value = ''; notice(result.notice || 'Saved on your iPhone.'); await refresh();
+    pendingSend = null; $('input').value = ''; notice(result.notice || 'Saved on your Raspberry Pi.'); await refresh();
   }
   catch(e) { notice(e.message); $('send').disabled = !!current?.busy; }
 };
@@ -109,7 +109,7 @@ for (const button of document.querySelectorAll('[data-target]')) button.onclick 
 for (const button of document.querySelectorAll('[data-prompt]')) button.onclick = () => { $('input').value = button.dataset.prompt; $('input').focus(); };
 $('stop').onclick = async () => { try { await post('stop'); notice('Stopping the current reply and remaining turns…'); await refresh(); } catch(e) { notice(e.message); } };
 $('new').onclick = async () => { try { room = (await post('new',{request_id:crypto.randomUUID()})).room; localStorage.setItem('threeway-room',room); lastMessages=''; notice(''); await refresh(); } catch(e) { notice(e.message); } };
-$('refresh').onclick = async () => { try { await refresh(); notice('Phone host refreshed.'); } catch(e) { notice(e.message); } };
+$('refresh').onclick = async () => { try { await refresh(); notice('Raspberry Pi host refreshed.'); } catch(e) { notice(e.message); } };
 for (const provider of ['gpt','claude']) $(provider+'-login').onclick = async () => {
   try { const result = await post('login',{provider}); notice(result.notice); await refresh(); }
   catch(e) { notice(e.message); }
@@ -126,7 +126,7 @@ $('export').onclick = async () => {
 async function pair(room, key) {
   const response = await fetch('/api/session', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,key})});
   const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Pairing failed.');
-  $('pairing').close(); notice('Browser paired. Connecting to your iPhone…'); await refresh();
+  $('pairing').close(); notice('Browser paired. Connecting to your Raspberry Pi…'); await refresh();
 }
 $('pairing-form').onsubmit = async event => { event.preventDefault(); try { await pair($('pair-room').value.trim(),$('pair-key').value.trim()); $('pair-key').value = ''; } catch(e) { $('pairing-error').textContent = e.message; } };
 async function start() {

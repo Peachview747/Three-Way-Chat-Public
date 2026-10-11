@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${EUID} -ne 0 ]]; then echo 'Run with sudo.' >&2; exit 1; fi
+provider=${1:-}
+systemctl stop ai-room.service
+trap 'systemctl start ai-room.service' EXIT
+case "$provider" in
+  gpt) runuser -u ai-room -- env HOME=/var/lib/ai-room codex login --device-auth ;;
+  claude) runuser -u ai-room -- env HOME=/var/lib/ai-room claude auth login ;;
+  *) echo 'Usage: sudo ai-room-login gpt|claude' >&2; exit 1 ;;
+esac
+echo "$provider connected."

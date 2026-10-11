@@ -1,5 +1,13 @@
 # Verification
 
+## Raspberry Pi 5 migration
+
+AI Room’s active host is now a Node.js service for 64-bit Raspberry Pi OS. The service preserves the deployed WebSocket protocol and room credentials, stores conversations atomically under `/var/lib/ai-room`, invokes the official Codex and Claude Code CLIs without a shell, bounds output and execution time, supports cancellation, and reconnects through systemd without inbound ports.
+
+Three Pi-host tests cover persistent conversations and replies, request deduplication, room creation, provider status, service-login guidance, and shell-safe CLI argument handling. The six existing Miniflare tests continue to cover relay authentication, handshake, replacement, concurrency, bounded input, and backup authorization. Installer scripts pass Bash syntax validation. The GitHub workflow now runs on Ubuntu ARM64; it no longer requests a macOS runner or builds an IPA.
+
+Physical Pi verification still requires installing on the owner’s Raspberry Pi 5, completing both provider logins, and confirming the private website link reaches the service. The old iPhone connector must be disconnected because only one host can own the room.
+
 ## Build 8 assistants, background hosting, and private backup
 
 Build 8 adds ChatGPT Codex device authorization, Claude Code service authorization, Keychain token storage and refresh, real assistant responses, stop handling, and multi-round discussion. It adds an audio background mode and silent keep-alive modeled on Video Pilot Build 49. Conversation files remain readable after the first unlock so replies can finish in the background. The Worker accepts phone-authenticated backups and writes them through an encrypted `GITHUB_TOKEN` secret to the private data repository. The secret must be configured before backup becomes active.

@@ -78,7 +78,7 @@ export default {
       return json({ ok: true }, 200, { 'Set-Cookie': 'tw_link=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Strict' });
     }
     if (url.pathname === '/api/backup' && request.method === 'POST') {
-      if (!await matches(bearer(request), env.PHONE_KEY_HASH)) return json({error:'Phone authorization failed.'},401);
+      if (!await matches(bearer(request), env.PHONE_KEY_HASH)) return json({error:'Host authorization failed.'},401);
       let history; try { history = await readJSON(request,750_000); } catch { return json({error:'Invalid conversation backup.'},400); }
       if (!Array.isArray(history.rooms) || !Array.isArray(history.messages)) return json({error:'Invalid conversation backup.'},400);
       return backupToGitHub(history,env);
@@ -87,13 +87,13 @@ export default {
     const action = url.pathname.slice('/api/'.length);
     if (!url.pathname.startsWith('/api/') || !Object.hasOwn(routes, action)) return json({error:'Not found.'},404);
     const phone = action === 'phone';
-    if (!await matches(phone ? bearer(request) : browserKey(request), phone ? env.PHONE_KEY_HASH : env.BROWSER_KEY_HASH)) return json({ error: 'Open the private Website link from your iPhone to pair this browser.' }, 401);
+    if (!await matches(phone ? bearer(request) : browserKey(request), phone ? env.PHONE_KEY_HASH : env.BROWSER_KEY_HASH)) return json({ error: 'Open your Raspberry Pi’s private website link to pair this browser.' }, 401);
     if (request.method !== routes[action]) return json({error:'Method not allowed.'},405);
     if (phone) {
       if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json({error:'WebSocket required.'},426);
       if (request.headers.has('origin') && request.headers.get('origin') !== url.origin) return json({error:'Request rejected.'},403);
     } else if (request.method === 'POST' && request.headers.get('origin') !== url.origin) return json({error:'Request rejected.'},403);
-    // The one provisioned room has separate phone and browser credentials.
+    // The one provisioned room has separate host and browser credentials.
     // No arbitrary proxy destinations, commands, or provider requests exist.
     return env.PHONE_ROOM.getByName(env.ROOM_ID).fetch(request);
   },
@@ -103,7 +103,7 @@ export class PhoneRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     // Pending fetches keep the instance awake until the bounded request completes.
-    // Conversations are owned by the iPhone and never written to DO storage.
+    // Conversations are owned by the Raspberry Pi and never written to DO storage.
     this.pending = new Map();
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
@@ -122,7 +122,7 @@ export class PhoneRoom extends DurableObject {
   }
   disconnected(ws) {
     for (const [id, pending] of this.pending) if (pending.ws === ws) {
-      this.finish(id, json({error:'The iPhone disconnected. Reopen AI Room and retry.'},503));
+      this.finish(id, json({error:'The Raspberry Pi host disconnected. Check its AI Room service.'},503));
     }
   }
   async fetch(request) {
@@ -130,7 +130,7 @@ export class PhoneRoom extends DurableObject {
     if (url.pathname === '/api/phone') {
       for (const old of this.phones()) {
         try { old.send(JSON.stringify({type:'replaced'})); } catch {}
-        this.disconnected(old); old.close(4001,'Another phone connected');
+        this.disconnected(old); old.close(4001,'Another host connected');
       }
       const [client, server] = Object.values(new WebSocketPair());
       this.ctx.acceptWebSocket(server,['phone']);
@@ -139,20 +139,20 @@ export class PhoneRoom extends DurableObject {
       return new Response(null,{status:101,webSocket:client});
     }
     const ws = this.phones().find(phone => phone.deserializeAttachment()?.ready);
-    if (!ws) return json({error:'Open AI Room on your iPhone and connect. Your phone hosts this room.'},503);
-    if (this.pending.size >= 8) return json({error:'The phone is busy. Retry in a moment.'},429);
+    if (!ws) return json({error:'The Raspberry Pi host is offline. Check the ai-room service.'},503);
+    if (this.pending.size >= 8) return json({error:'The Raspberry Pi host is busy. Retry in a moment.'},429);
     let body;
     try { body = request.method === 'GET' ? {room:url.searchParams.get('room') || ''} : await readJSON(request); }
     catch { return json({error:'Invalid room request.'},400); }
-    if (this.pending.size >= 8) return json({error:'The phone is busy. Retry in a moment.'},429);
-    // The phone receives a named room operation, never an arbitrary URL or command.
+    if (this.pending.size >= 8) return json({error:'The Raspberry Pi host is busy. Retry in a moment.'},429);
+    // The host receives a named room operation, never an arbitrary URL or command.
     const action = url.pathname.slice('/api/'.length), id = crypto.randomUUID();
     return new Promise(resolve => {
       const timeout = action === 'send' ? 180_000 : 15_000;
-      const timer = setTimeout(() => this.finish(id,json({error:'The phone did not answer. Keep AI Room open, then retry.'},504)),timeout);
+      const timer = setTimeout(() => this.finish(id,json({error:'The Raspberry Pi host did not answer. Check the ai-room service.'},504)),timeout);
       this.pending.set(id,{resolve,timer,ws});
       try { ws.send(JSON.stringify({type:'request',id,action,body})); }
-      catch { this.finish(id,json({error:'The phone disconnected. Reopen AI Room.'},503)); }
+      catch { this.finish(id,json({error:'The Raspberry Pi host disconnected.'},503)); }
     });
   }
   webSocketMessage(ws, raw) {
@@ -165,7 +165,7 @@ export class PhoneRoom extends DurableObject {
         ws.send(JSON.stringify({type:'connected',protocol:PROTOCOL})); return;
       }
       if (body.type !== 'response' || !ID.test(body.id || '') || ![200,400,404,500,503].includes(body.status) || !body.body || typeof body.body !== 'object' || Array.isArray(body.body)) throw new Error('Invalid response.');
-      // A replacement phone cannot complete the previous phone’s pending request.
+      // A replacement host cannot complete the previous host’s pending request.
       if (this.pending.get(body.id)?.ws === ws) this.finish(body.id,json(body.body,body.status));
     } catch { this.disconnected(ws); ws.close(1008,'Invalid host response'); }
   }

@@ -1,44 +1,87 @@
-# AI Room phone connector
+# AI Room Raspberry Pi 5 host
 
-AI Room’s iPhone app hosts the conversations used by the dashboard at <https://ai.jch76.workers.dev/>. The phone maintains an authenticated outbound WebSocket to Cloudflare, calls the assistant services, saves chat history locally, and can back that history up to the private app-data repository. The laptop can be off.
+AI Room now runs continuously on a Raspberry Pi 5 with 64-bit Raspberry Pi OS. The Pi owns conversations, connects to ChatGPT and Claude through their official command-line service logins, and maintains the authenticated outbound WebSocket to <https://ai.jch76.workers.dev/>. iPhone, iPad, and desktop devices are browser clients; no Mac, Xcode, inbound port, or iOS app is required.
 
-## Build 8
+The existing Cloudflare room and private browser link remain valid. The relay protocol and credential hashes are unchanged, so the Pi can use the private setup JSON originally created for the phone connector.
 
-Build 8 connects ChatGPT through Codex device authorization and Claude through Claude Code service authorization. OAuth credentials stay in the iPhone Keychain and are never included in browser traffic, setup files, conversation exports, or GitHub backups. Completed replies are written atomically to the phone.
+## Requirements
 
-The app uses the same silent background-audio hosting pattern as Video Pilot Build 49. Leave **Keep hosting when app is in background** enabled to switch apps or lock the screen. iOS can still suspend the app after a force quit, an audio interruption, or system resource pressure; the connector automatically reconnects when execution resumes.
+- Raspberry Pi 5 running Raspberry Pi OS 64-bit
+- Reliable power and network access; Ethernet is preferred
+- The private `AI-Room-Phone-Setup.json` file
+- ChatGPT and Claude subscriptions that permit Codex CLI and Claude Code login
+- Optional GitHub access to `Peachview747/Three-Way-Chat-App-Data` for encrypted private-repository backup
 
-The display name is AI Room. The bundle identifier, Keychain service, conversation path, and relay protocol remain stable so an in-place update preserves existing pairing and history. Build 8 requires a setup file whose `server` is exactly `https://ai.jch76.workers.dev/`.
+The service uses Node.js 20 or newer. The installer adds Node.js 22 when the installed version is older, installs the official `@openai/codex` and `@anthropic-ai/claude-code` packages, creates a locked-down `ai-room` system account, and enables a systemd service.
 
-## Install and connect
+## Install on the Pi
 
-1. Install the Build 8 IPA using your usual personal sideload method or update the existing guest app inside LiveContainer. It requires iOS 17 or later. Preserve the app’s data container during an update.
-2. Open **AI Room Connector**, tap **Import phone setup**, and choose the private `AI-Room-Phone-Setup.json`. Importing connects automatically. Existing pairing remains in Keychain; tap **Connect to Cloudflare** if it was already imported.
-3. Wait for **Connected to Cloudflare**. Leave background hosting enabled if the connector must remain available while the app is not visible.
-4. Use **Share private website link** or **Copy private website link** and open that exact link on the other device. The fragment pairs the browser and is removed from its address after use.
-5. Under **Assistant connections**, connect ChatGPT and Claude. ChatGPT uses a device code. Claude opens its service login and returns a code that must be pasted into the connector.
-6. Use the website for individual prompts, replies from both services, multi-round discussions, new rooms, and exports.
+Copy the private setup JSON onto the Pi, then run:
 
-The setup guide inside the app also explains manual room and browser pairing codes. Private setup files, private links, conversations, OAuth credentials, Worker secrets, and signing certificates must never enter this public repository.
+```bash
+git clone --branch codex/three-way-phone-link https://github.com/Peachview747/Three-Way-Chat-Public.git
+cd Three-Way-Chat-Public/three-way-phone/pi-host
+sudo ./install.sh /path/to/AI-Room-Phone-Setup.json
+```
 
-## Hosting, storage, and backup
+The installer prints the private website link. Save that link on the iPhone and iPad; opening it pairs each browser automatically.
 
-Cloudflare serves the dashboard and routes fixed, authenticated room actions through a Durable Object. The phone calls ChatGPT and Claude directly; Cloudflare never receives provider credentials. The phone holds at most 50 rooms, 500 messages, and 600 KB of history.
+Connect both subscriptions from the Pi terminal:
 
-History is stored with file protection that remains available after the first device unlock, allowing a background reply to finish. Writes are atomic. Repeated request IDs deduplicate, changed payloads are rejected, and damaged history files are preserved instead of overwritten.
+```bash
+sudo ai-room-login gpt
+sudo ai-room-login claude
+```
 
-After a history change, the phone sends an authenticated snapshot to `/api/backup`. When `GITHUB_TOKEN` is configured as an encrypted Worker secret, the Worker writes it to `conversations/ai-room-conversations.json` in `Peachview747/Three-Way-Chat-App-Data`. Optional Worker variables `GITHUB_REPOSITORY` and `GITHUB_BACKUP_PATH` can override those defaults. The token needs contents read/write access only to that private repository.
+Both commands display a browser URL or device code that can be completed from a phone. Credentials are stored under `/var/lib/ai-room` for the dedicated service account and are never sent to Cloudflare or included in conversation backups.
 
-## Relay security
+Check the host:
 
-`three-way-host/1` exchanges `hello → ready → connected` before browser operations run. Only state, export, send, new, refresh, login, and stop are routed. There is no arbitrary URL proxy, shell access, or access to local files outside chat storage.
+```bash
+systemctl status ai-room
+journalctl -u ai-room -f
+```
 
-One phone owns the connection. A replacement cancels the prior phone’s pending requests. There are at most eight in-flight operations, a 15-second standard deadline, a three-minute assistant deadline, and bounded frames. Phone and browser credentials are separate; Cloudflare stores their SHA-256 hashes. Browser writes require the site’s own Origin. Cookies are Secure, HttpOnly, and SameSite=Strict. WebSocket heartbeats use Durable Object auto-responses and reconnects back off to 30 seconds.
+The service starts at boot and reconnects with bounded exponential backoff. All connections are outbound, so the router needs no port forwarding.
 
-## Build and verify
+## Private GitHub backup
 
-The public branch `codex/three-way-phone-link` triggers `.github/workflows/three-way-iphone.yml` on a public macOS runner. It tests local conversation storage, builds the device archive, verifies metadata and arm64 packaging, checks that no dashboard is bundled in the IPA, applies the ad-hoc template signature, and runs the connector simulator UI test. The artifact contains the IPA, checksum report, and simulator screenshots.
+Conversation history is stored locally at `/var/lib/ai-room/conversations.json` with owner-only permissions and atomic replacement. To also back it up to the private data repository:
 
-Run Worker tests with `npm ci && npm test`. On macOS, run `bash scripts/build_ipa.sh`. `python3 scripts/prepare_assets.py` regenerates the Worker’s dashboard assets. Worker deployment is separate and requires the owner’s Cloudflare account.
+```bash
+sudo apt install gh
+sudo ai-room-configure-github-backup Peachview747/Three-Way-Chat-App-Data
+```
 
-The Video Pilot Build 49 IPA informed the background-hosting pattern. AI Room retains its own bundle identifier, Keychain services, and pairing credentials.
+GitHub shows a device code that can be approved on a phone. The helper clones the private repository as the `ai-room` user and adds `conversations/ai-room-conversations.json`. Subsequent conversation changes commit and push automatically. GitHub credentials remain on the Pi.
+
+## Moving from the iPhone host
+
+Only one host may own the room WebSocket. Disconnect or remove the old AI Room Connector after the Pi is installed. Opening the old connector and tapping Connect will replace the Pi until systemd reconnects.
+
+Existing conversations from the iPhone do not automatically move to the Pi. Export them from the website before switching if they must be retained. The Pi starts with a new local conversation file while keeping the same browser pairing.
+
+## Assistant behavior
+
+The host executes provider CLIs directly without a shell. Prompts are passed as process arguments, output is capped, each request has a 170-second process deadline, and browser stop requests abort the active child process. ChatGPT uses `codex exec` with a read-only sandbox and an isolated working directory. Claude uses print mode without session persistence. AI Room supplies recent room context and saves final replies itself.
+
+The browser supports ChatGPT, Claude, both services, and one to three discussion rounds. Clicking a disconnected provider’s setup button returns the exact Pi login command.
+
+## Cloudflare relay
+
+Cloudflare serves the dashboard and routes a fixed set of authenticated operations through the existing Durable Object. It does not store conversations or assistant credentials. Host and browser credentials remain separate. Browser writes require the site’s own Origin, cookies are Secure/HttpOnly/SameSite=Strict, and at most eight operations can be pending.
+
+The internal `/api/phone` route and `PHONE_*` binding names are retained for compatibility with the deployed room and private setup file. They now identify the Raspberry Pi host.
+
+## Development and verification
+
+Run locally on Linux:
+
+```bash
+cd three-way-phone/pi-host && npm ci && npm test
+cd .. && npm ci && npm test
+```
+
+The public `AI Room Raspberry Pi 5 host` workflow runs these checks on GitHub’s Ubuntu ARM64 runner and validates the installer scripts. No macOS runner or IPA build is used.
+
+The previous iOS source remains in the repository as migration history, but it is no longer the deployment target.
