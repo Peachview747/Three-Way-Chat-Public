@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import Security
 import UIKit
 
@@ -64,7 +65,15 @@ final class LinkModel: ObservableObject {
     @Published private(set) var detail = "Import your AI Room Phone Setup file to begin."
     @Published var notice = ""
     @Published var keepScreenOn = true { didSet { updateScreen() } }
-    let store = ConversationStore()
+    @Published var keepHostingInBackground = true {
+        didSet {
+            UserDefaults.standard.set(keepHostingInBackground, forKey: "keepHostingInBackground")
+            if !foreground && wantsConnection && !keepHostingInBackground { cancelConnection() }
+            updateScreen()
+        }
+    }
+    let providers = ProviderManager.shared
+    lazy var store = ConversationStore(providers: providers)
     private var runner: Task<Void, Never>?
     private var heartbeat: Task<Void, Never>?
     private var socket: URLSessionWebSocketTask?
@@ -74,6 +83,9 @@ final class LinkModel: ObservableObject {
     private var lastReceived = Date.distantPast
 
     init() {
+        if UserDefaults.standard.object(forKey: "keepHostingInBackground") != nil {
+            keepHostingInBackground = UserDefaults.standard.bool(forKey: "keepHostingInBackground")
+        }
         if let saved = ProfileStore.read(), (try? saved.validate()) != nil {
             profile = saved; status = "Ready to connect"; detail = "Connect this iPhone to your website."
         }
@@ -99,12 +111,14 @@ final class LinkModel: ObservableObject {
     }
     func setForeground(_ active: Bool) {
         foreground = active
-        if active && wantsConnection { startRunner() }
-        else if !active {
+        updateScreen()
+        if wantsConnection && (active || keepHostingInBackground) {
+            startRunner()
+            if !active && connected { status = "Connected in background" }
+        } else if !active {
             cancelConnection()
             if wantsConnection { status = "Paused"; detail = "Reopen AI Room to reconnect your website." }
         }
-        updateScreen()
     }
     private func cancelConnection() {
         generation = UUID(); runner?.cancel(); runner = nil
@@ -124,7 +138,8 @@ final class LinkModel: ObservableObject {
         runner = Task { [weak self] in
             guard let self else { return }
             var attempt = 0
-            while !Task.isCancelled && self.wantsConnection && self.foreground && self.generation == current {
+            while !Task.isCancelled && self.wantsConnection &&
+                    (self.foreground || self.keepHostingInBackground) && self.generation == current {
                 self.status = attempt == 0 ? "Connecting…" : "Reconnecting…"
                 self.detail = "Reaching your Cloudflare website."
                 let configuration = URLSessionConfiguration.ephemeral
@@ -183,8 +198,12 @@ final class LinkModel: ObservableObject {
                                   let id = body["id"] as? String, UUID(uuidString: id) != nil,
                                   let action = body["action"] as? String,
                                   let input = body["body"] as? [String: Any] {
-                            let reply = self.store.handle(action: action, body: input)
-                            try await self.transmit(["type": "response", "id": id, "status": reply.status, "body": reply.body], socket: socket)
+                            Task { [weak self, weak socket] in
+                                guard let self, let socket else { return }
+                                let reply = await self.store.handleAsync(action: action, body: input)
+                                try? await self.transmit(["type": "response", "id": id, "status": reply.status, "body": reply.body], socket: socket)
+                                if self.store.changedSinceBackup { await self.backupHistory(profile: profile) }
+                            }
                         } else { throw LinkFailure.message("Unexpected website response.") }
                     }
                 } catch {
@@ -211,5 +230,22 @@ final class LinkModel: ObservableObject {
             if self.generation == current { self.runner = nil }
         }
     }
-    private func updateScreen() { UIApplication.shared.isIdleTimerDisabled = foreground && wantsConnection && keepScreenOn }
+    private func updateScreen() {
+        UIApplication.shared.isIdleTimerDisabled = foreground && wantsConnection && keepScreenOn
+        BackgroundKeepAlive.shared.update(enabled: keepHostingInBackground,
+            hosting: wantsConnection, foreground: foreground)
+    }
+
+    private func backupHistory(profile: LinkProfile) async {
+        do {
+            let (data, revision) = try store.exportSnapshot()
+            var request = URLRequest(url: URL(string: profile.server + "api/backup")!)
+            request.httpMethod = "POST"; request.httpBody = data
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer " + profile.phoneKey, forHTTPHeaderField: "Authorization")
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
+            store.markBackedUp(revision: revision)
+        } catch { }
+    }
 }

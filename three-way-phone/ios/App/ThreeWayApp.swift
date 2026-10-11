@@ -12,8 +12,7 @@ struct ThreeWayApp: App {
         WindowGroup {
             ConnectorView(model: model)
                 .onChange(of: phase) { _, next in
-                    if next == .active { model.setForeground(true) }
-                    else if next == .background { model.setForeground(false) }
+                    model.setForeground(next == .active)
                 }
         }
     }
@@ -21,8 +20,11 @@ struct ThreeWayApp: App {
 
 private struct ConnectorView: View {
     @ObservedObject var model: LinkModel
+    @ObservedObject private var background = BackgroundKeepAlive.shared
+    @ObservedObject private var providers = ProviderManager.shared
     @State private var importing = false
     @State private var showingSetupHelp = false
+    @State private var claudeCode = ""
     private let green = Color(red: 0.18, green: 0.42, blue: 0.34)
 
     var body: some View {
@@ -111,14 +113,35 @@ private struct ConnectorView: View {
                 }
 
                 Section("While using the website") {
-                    Text("Keep AI Room open on this iPhone. Use the private website link on another device; your laptop can be off.")
-                    Text("Locking the phone or switching apps pauses this connector. Reopen AI Room to reconnect. Conversations stay saved on this iPhone.")
+                    Text("Use the private website link on another device; your laptop can be off.")
+                    Toggle("Keep hosting when app is in background", isOn: $model.keepHostingInBackground)
+                    Text(background.status)
+                        .foregroundStyle(.secondary)
+                    Text("iOS can still interrupt background audio for calls, system pressure, or a forced app quit. AI Room reconnects automatically when reopened.")
                         .foregroundStyle(.secondary)
                 }
 
                 Section("Assistant connections") {
-                    Text("GPT and Claude are not connected in this build. The website saves prompts on your phone; it does not produce assistant replies yet.")
-                        .foregroundStyle(.secondary)
+                    providerRow(name: "ChatGPT", status: providers.gptStatus, ready: providers.connections["gpt"]?.ready == true) {
+                        beginLogin("gpt")
+                    }
+                    providerRow(name: "Claude", status: providers.claudeStatus, ready: providers.connections["claude"]?.ready == true) {
+                        beginLogin("claude")
+                    }
+                    if providers.claudeNeedsCode {
+                        TextField("Paste Claude authorization code", text: $claudeCode)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .accessibilityIdentifier("claude-code")
+                        Button("Finish Claude sign-in") {
+                            Task {
+                                do { try await providers.completeClaudeLogin(claudeCode); claudeCode = ""; model.notice = "Claude connected." }
+                                catch { model.notice = error.localizedDescription }
+                            }
+                        }.disabled(claudeCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    Text("Service logins are saved in this iPhone’s Keychain. They are never sent to the website or GitHub backup.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if !providers.loginNote.isEmpty { Text(providers.loginNote).font(.footnote).textSelection(.enabled) }
                 }
 
                 if !model.notice.isEmpty {
@@ -174,6 +197,24 @@ private struct ConnectorView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func providerRow(name: String, status: String, ready: Bool, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack { Text(name).font(.headline); Spacer(); Image(systemName: ready ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(ready ? green : .secondary) }
+            Text(status).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+            Button(ready ? "Reconnect \(name)" : "Connect \(name)", action: action)
+                .disabled(providers.loginBusy)
+        }.padding(.vertical, 4)
+    }
+
+    private func beginLogin(_ provider: String) {
+        Task {
+            do { model.notice = try await providers.startLogin(provider) }
+            catch { model.notice = error.localizedDescription }
         }
     }
 }

@@ -35,10 +35,10 @@ jobs:
         if: ${{ !cancelled() && steps.ipa.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Room-iPhone-0.1.0-Build-7
+          name: AI-Room-iPhone-0.1.0-Build-8
           path: |
-            three-way-phone/.build/AI-Room-0.1.0-Build-7.ipa
-            three-way-phone/.build/AI-Room-0.1.0-Build-7.json
+            three-way-phone/.build/AI-Room-0.1.0-Build-8.ipa
+            three-way-phone/.build/AI-Room-0.1.0-Build-8.json
             three-way-phone/.build/connector-screenshots
           if-no-files-found: error
           retention-days: 7

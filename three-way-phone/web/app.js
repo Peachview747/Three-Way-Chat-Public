@@ -104,12 +104,12 @@ for (const button of document.querySelectorAll('[data-target]')) button.onclick 
   target = button.dataset.target;
   for (const b of document.querySelectorAll('[data-target]')) b.classList.toggle('selected',b === button);
   $('rounds-label').hidden = target !== 'discuss';
-  $('send-hint').textContent = {both:'Save for GPT and Claude. Assistants are not connected yet.',gpt:'Save for GPT. Assistant is not connected yet.',claude:'Save for Claude. Assistant is not connected yet.',discuss:'Save a discussion prompt. Assistants are not connected yet.'}[target];
+  $('send-hint').textContent = {both:'Ask ChatGPT and Claude.',gpt:'Ask ChatGPT.',claude:'Ask Claude.',discuss:'Let ChatGPT and Claude discuss this for the selected rounds.'}[target];
 };
 for (const button of document.querySelectorAll('[data-prompt]')) button.onclick = () => { $('input').value = button.dataset.prompt; $('input').focus(); };
 $('stop').onclick = async () => { try { await post('stop'); notice('Stopping the current reply and remaining turns…'); await refresh(); } catch(e) { notice(e.message); } };
 $('new').onclick = async () => { try { room = (await post('new',{request_id:crypto.randomUUID()})).room; localStorage.setItem('threeway-room',room); lastMessages=''; notice(''); await refresh(); } catch(e) { notice(e.message); } };
-$('refresh').onclick = async () => { try { await refresh(); notice('Phone host refreshed. GPT and Claude are not connected yet.'); } catch(e) { notice(e.message); } };
+$('refresh').onclick = async () => { try { await refresh(); notice('Phone host refreshed.'); } catch(e) { notice(e.message); } };
 for (const provider of ['gpt','claude']) $(provider+'-login').onclick = async () => {
   try { const result = await post('login',{provider}); notice(result.notice); await refresh(); }
   catch(e) { notice(e.message); }

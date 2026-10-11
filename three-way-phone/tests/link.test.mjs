@@ -52,6 +52,7 @@ test('separate credentials, own-origin writes, and fixed routes protect the phon
   assert.equal((await f.fetch('/api/send',{headers:{cookie:f.cookie}})).status,405);
   assert.equal((await f.fetch('/api/proxy?url=http://localhost',{headers:{cookie:f.cookie}})).status,404);
   assert.equal((await f.fetch('/api/reset',{method:'DELETE',headers:{authorization:'Bearer '+f.phoneKey}})).status,404);
+  assert.equal((await f.fetch('/api/backup',{method:'POST',headers:{authorization:'Bearer '+f.browserKey,'content-type':'application/json'},body:'{}'})).status,401);
 });
 test('phone must complete its handshake; state and prompts are answered by the phone',async t=>{
   const f=await fixture(t);assert.equal((await f.state()).status,503);
@@ -91,8 +92,15 @@ test('oversized requests fail; public assets keep the original layout without cr
   assert.equal((await f.post('send',{text:'x'.repeat(65537)})).status,400);
   const html=await(await f.fetch('/')).text(),js=await(await f.fetch('/app.js')).text();
   assert.ok(html.includes('Finally, all in the same room.')&&html.includes('Talk it through'));
-  assert.ok(html.includes('GPT and Claude connections come later'));
+  assert.ok(html.includes('id="gpt-login"')&&html.includes('id="claude-login"'));
   assert.ok(!html.includes(f.phoneKey)&&!js.includes(f.browserKey));
   assert.ok(!js.includes('innerHTML')&&!js.includes('backend-api')&&!js.includes('api.anthropic'));
   const logout=await f.post('logout');assert.ok(logout.headers.get('set-cookie').includes('Max-Age=0'));
+});
+test('phone-authorized backups are validated and require a Worker GitHub secret',async t=>{
+  const f=await fixture(t);
+  const bad=await f.fetch('/api/backup',{method:'POST',headers:{authorization:'Bearer '+f.phoneKey,'content-type':'application/json'},body:'{}'});
+  assert.equal(bad.status,400);
+  const valid=await f.fetch('/api/backup',{method:'POST',headers:{authorization:'Bearer '+f.phoneKey,'content-type':'application/json'},body:JSON.stringify({rooms:[],messages:[]})});
+  assert.equal(valid.status,503);assert.match((await valid.json()).error,/not configured/);
 });

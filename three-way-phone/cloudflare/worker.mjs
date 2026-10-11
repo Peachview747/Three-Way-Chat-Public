@@ -37,6 +37,27 @@ async function readJSON(request, max = 65536) {
   return body;
 }
 
+function base64UTF8(data) {
+  const bytes = new TextEncoder().encode(JSON.stringify(data)); let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+async function backupToGitHub(history, env) {
+  if (!env.GITHUB_TOKEN) return json({error:'Private GitHub backup is not configured on this Worker.'},503);
+  const repository = env.GITHUB_REPOSITORY || 'Peachview747/Three-Way-Chat-App-Data';
+  const path = env.GITHUB_BACKUP_PATH || 'conversations/ai-room-conversations.json';
+  const endpoint = `https://api.github.com/repos/${repository}/contents/${path}`;
+  const headers = {'Authorization':`Bearer ${env.GITHUB_TOKEN}`,'Accept':'application/vnd.github+json',
+    'X-GitHub-Api-Version':'2022-11-28','User-Agent':'AI-Room-Worker'};
+  const current = await fetch(endpoint,{headers}); let sha;
+  if (current.ok) sha = (await current.json()).sha;
+  else if (current.status !== 404) return json({error:'GitHub backup could not read the private data file.'},502);
+  const body = {message:'Back up AI Room conversations',content:base64UTF8(history),...(sha?{sha}:{})};
+  const saved = await fetch(endpoint,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (!saved.ok) return json({error:'GitHub rejected the private conversation backup.'},502);
+  return json({ok:true});
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -55,6 +76,12 @@ export default {
     if (url.pathname === '/api/logout' && request.method === 'POST') {
       if (request.headers.get('origin') !== url.origin) return json({ error: 'Request rejected.' }, 403);
       return json({ ok: true }, 200, { 'Set-Cookie': 'tw_link=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Strict' });
+    }
+    if (url.pathname === '/api/backup' && request.method === 'POST') {
+      if (!await matches(bearer(request), env.PHONE_KEY_HASH)) return json({error:'Phone authorization failed.'},401);
+      let history; try { history = await readJSON(request,750_000); } catch { return json({error:'Invalid conversation backup.'},400); }
+      if (!Array.isArray(history.rooms) || !Array.isArray(history.messages)) return json({error:'Invalid conversation backup.'},400);
+      return backupToGitHub(history,env);
     }
     const routes = {phone:'GET',state:'GET',export:'GET',send:'POST',new:'POST',refresh:'POST',login:'POST',stop:'POST'};
     const action = url.pathname.slice('/api/'.length);
@@ -121,7 +148,8 @@ export class PhoneRoom extends DurableObject {
     // The phone receives a named room operation, never an arbitrary URL or command.
     const action = url.pathname.slice('/api/'.length), id = crypto.randomUUID();
     return new Promise(resolve => {
-      const timer = setTimeout(() => this.finish(id,json({error:'The phone did not answer. Keep AI Room open, then retry.'},504)),10_000);
+      const timeout = action === 'send' ? 180_000 : 15_000;
+      const timer = setTimeout(() => this.finish(id,json({error:'The phone did not answer. Keep AI Room open, then retry.'},504)),timeout);
       this.pending.set(id,{resolve,timer,ws});
       try { ws.send(JSON.stringify({type:'request',id,action,body})); }
       catch { this.finish(id,json({error:'The phone disconnected. Reopen AI Room.'},503)); }
@@ -136,7 +164,7 @@ export class PhoneRoom extends DurableObject {
         ws.serializeAttachment({...ws.deserializeAttachment(),ready:true});
         ws.send(JSON.stringify({type:'connected',protocol:PROTOCOL})); return;
       }
-      if (body.type !== 'response' || !ID.test(body.id || '') || ![200,400,404,500].includes(body.status) || !body.body || typeof body.body !== 'object' || Array.isArray(body.body)) throw new Error('Invalid response.');
+      if (body.type !== 'response' || !ID.test(body.id || '') || ![200,400,404,500,503].includes(body.status) || !body.body || typeof body.body !== 'object' || Array.isArray(body.body)) throw new Error('Invalid response.');
       // A replacement phone cannot complete the previous phone’s pending request.
       if (this.pending.get(body.id)?.ws === ws) this.finish(body.id,json(body.body,body.status));
     } catch { this.disconnected(ws); ws.close(1008,'Invalid host response'); }

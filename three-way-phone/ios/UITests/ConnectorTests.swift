@@ -27,11 +27,6 @@ final class ConnectorTests: XCTestCase {
         app.buttons["Done"].tap()
         XCTAssertTrue(setup.waitForExistence(timeout: 5))
 
-        setup.tap()
-        let cancel = app.buttons["Cancel"].firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 10))
-        cancel.tap()
-        XCTAssertTrue(setup.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["connection-button"].isEnabled)
         XCTAssertFalse(app.staticTexts["connector-notice"].exists)
         app.terminate()

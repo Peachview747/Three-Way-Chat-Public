@@ -1,57 +1,44 @@
 # AI Room phone connector
 
-AI Room's iPhone app connects the phone to Cloudflare and shows setup, connection status, and the private website link. The chat dashboard lives at https://ai.jch76.workers.dev/. Build 3 removes the embedded dashboard from the IPA. Your iPhone owns the conversations and maintains an outbound authenticated WebSocket. Your laptop can be off while the connector remains open on the phone.
+AI Room’s iPhone app hosts the conversations used by the dashboard at <https://ai.jch76.workers.dev/>. The phone maintains an authenticated outbound WebSocket to Cloudflare, calls the assistant services, saves chat history locally, and can back that history up to the private app-data repository. The laptop can be off.
 
-GPT and Claude are not connected in this milestone. The website saves prompts with their chosen recipients; assistant sign-in and replies are not implemented. There are no model API calls or Etsy publishing operations.
+## Build 8
 
-## Current address (Build 7)
+Build 8 connects ChatGPT through Codex device authorization and Claude through Claude Code service authorization. OAuth credentials stay in the iPhone Keychain and are never included in browser traffic, setup files, conversation exports, or GitHub backups. Completed replies are written atomically to the phone.
 
-AI Room now uses `https://ai.jch76.workers.dev/`. Cloudflare’s shared account subdomain is `jch76`; Video Pilot’s Worker is now `https://tv.jch76.workers.dev/`. Import the matching private phone setup file after installing Build 7.
+The app uses the same silent background-audio hosting pattern as Video Pilot Build 49. Leave **Keep hosting when app is in background** enabled to switch apps or lock the screen. iOS can still suspend the app after a force quit, an audio interruption, or system resource pressure; the connector automatically reconnects when execution resumes.
 
-## App name (Build 6)
-
-AI Room is the new display name. Bundle identifier, Keychain service, history path, relay protocol, and internal project names remain unchanged so in-place updates preserve data. Older Three-Way-Phone-Setup.json files remain importable when their contents target the current website.
-
-## URL migration (Build 4)
-
-Build 4 targets `https://ai.jch76.workers.dev/`. Deploy the `ai` Worker in the Cloudflare account whose workers.dev subdomain is `jch76`; changing the Worker name does not change the account subdomain. Configure the existing room ID and phone/browser key hashes securely at deployment. Import an updated private setup JSON with `server` set to `https://ai.jch76.workers.dev/` (including the trailing slash), then share the new private website link. Old-site setup files are rejected; stored conversations stay on the phone when the app is updated in place. No private setup files or keys belong in this public repository.
-
-The background behavior is unchanged by this URL update.
-
-## Setup guidance (Build 5)
-
-The connector includes **How to set up and pair a browser**, which explains obtaining the private setup file, importing it from Files, connecting, and opening the private link on another device. After importing, **Pair a browser with codes instead** provides **Copy room code** and **Copy browser pairing code** for the website’s manual pairing dialog. The phone authentication key is never displayed or copied by these controls. Setup-file provisioning remains a separate website-owner operation.
+The display name is AI Room. The bundle identifier, Keychain service, conversation path, and relay protocol remain stable so an in-place update preserves existing pairing and history. Build 8 requires a setup file whose `server` is exactly `https://ai.jch76.workers.dev/`.
 
 ## Install and connect
 
-1. Use the IPA from the public GitHub Actions build with your normal personal sideload method, or update the existing AI Room guest app inside LiveContainer. Requires iOS 17 or later. Preserve the existing app's data container when updating.
-2. Open **AI Room Connector**. Tap **Import phone setup** and choose the private `AI-Room-Phone-Setup.json` supplied separately. Importing automatically connects. Existing pairing remains in the Keychain; tap **Connect to Cloudflare** if it was already imported.
-3. Wait for **Connected to Cloudflare**. Keep the connector open; screen-awake is enabled during the connection.
-4. Use **Share private website link** or **Copy private website link** and open it in a browser on another device. The public URL shows the dashboard; the private link pairs that browser to your phone's room for eight hours.
-5. Use the website for conversations, prompts, new rooms and exports.
+1. Install the Build 8 IPA using your usual personal sideload method or update the existing guest app inside LiveContainer. It requires iOS 17 or later. Preserve the app’s data container during an update.
+2. Open **AI Room Connector**, tap **Import phone setup**, and choose the private `AI-Room-Phone-Setup.json`. Importing connects automatically. Existing pairing remains in Keychain; tap **Connect to Cloudflare** if it was already imported.
+3. Wait for **Connected to Cloudflare**. Leave background hosting enabled if the connector must remain available while the app is not visible.
+4. Use **Share private website link** or **Copy private website link** and open that exact link on the other device. The fragment pairs the browser and is removed from its address after use.
+5. Under **Assistant connections**, connect ChatGPT and Claude. ChatGPT uses a device code. Claude opens its service login and returns a code that must be pasted into the connector.
+6. Use the website for individual prompts, replies from both services, multi-round discussions, new rooms, and exports.
 
-Locking the hosting phone or switching apps pauses this connector. Reopen AI Room to reconnect. LiveContainer background behavior is not verified. This build adds no background execution mode.
+The setup guide inside the app also explains manual room and browser pairing codes. Private setup files, private links, conversations, OAuth credentials, Worker secrets, and signing certificates must never enter this public repository.
 
-Pairing files, private links, conversations, credentials and signing certificates must never enter this public repository.
+## Hosting, storage, and backup
 
-## Hosting and storage
+Cloudflare serves the dashboard and routes fixed, authenticated room actions through a Durable Object. The phone calls ChatGPT and Claude directly; Cloudflare never receives provider credentials. The phone holds at most 50 rooms, 500 messages, and 600 KB of history.
 
-Cloudflare serves the dashboard's HTML, CSS and JavaScript. The iPhone app contains only the native connector interface. Authenticated browser requests pass through a Durable Object to the phone's conversation store. Cloudflare does not persist conversations or produce assistant replies.
+History is stored with file protection that remains available after the first device unlock, allowing a background reply to finish. Writes are atomic. Repeated request IDs deduplicate, changed payloads are rejected, and damaged history files are preserved instead of overwritten.
 
-Build 3 preserves the bundle identifier, Keychain service, history file path and history schema from Build 2. It removes the dashboard's native bridge without changing the relay or storage implementation. Updating in place preserves history; deleting the app or its LiveContainer data container removes it.
+After a history change, the phone sends an authenticated snapshot to `/api/backup`. When `GITHUB_TOKEN` is configured as an encrypted Worker secret, the Worker writes it to `conversations/ai-room-conversations.json` in `Peachview747/Three-Way-Chat-App-Data`. Optional Worker variables `GITHUB_REPOSITORY` and `GITHUB_BACKUP_PATH` can override those defaults. The token needs contents read/write access only to that private repository.
 
-The phone writes history atomically with complete file protection before acknowledging changes. Requests run on the main actor. Repeated request IDs deduplicate; changing their payload is rejected. Conversation IDs are persisted before use. Damaged history files are preserved and block writes. This build holds at most 50 rooms, 500 prompts and 600 KB of history; export is available on the website.
+## Relay security
 
-## Connection protocol
+`three-way-host/1` exchanges `hello → ready → connected` before browser operations run. Only state, export, send, new, refresh, login, and stop are routed. There is no arbitrary URL proxy, shell access, or access to local files outside chat storage.
 
-`three-way-host/1` exchanges `hello → ready → connected` before browser operations can run. JSON requests contain `{type:"request", id, action, body}` and responses contain `{type:"response", id, status, body}`. Only state, export, send, new, refresh, login and stop are routed. Login explains that assistants are unavailable; stop has no inference to cancel. There is no arbitrary URL proxy, shell access or access to local files outside chat storage.
-
-One phone owns the connection. A replacement cancels the previous phone's pending requests. There are at most eight in-flight requests, a ten-second response deadline, and bounded frames. Phone and browser credentials are separate; Cloudflare stores their SHA-256 hashes. Writes require the site's own Origin. Browser cookies are Secure, HttpOnly and SameSite=Strict. The pairing fragment is removed from the browser address after use. Heartbeats use Durable Object WebSocket auto-responses; reconnects back off to thirty seconds.
+One phone owns the connection. A replacement cancels the prior phone’s pending requests. There are at most eight in-flight operations, a 15-second standard deadline, a three-minute assistant deadline, and bounded frames. Phone and browser credentials are separate; Cloudflare stores their SHA-256 hashes. Browser writes require the site’s own Origin. Cookies are Secure, HttpOnly, and SameSite=Strict. WebSocket heartbeats use Durable Object auto-responses and reconnects back off to 30 seconds.
 
 ## Build and verify
 
-The feature branch `codex/three-way-phone-link` triggers `.github/workflows/three-way-iphone.yml` on a public macOS runner. The workflow tests phone storage, generates the Xcode project, archives the device app, validates arm64 and metadata, checks the IPA has no bundled dashboard, and applies an ad-hoc template signature. A simulator test verifies the connector screen, unavailable connection before pairing, file-picker cancellation, and absence of the chat interface. The artifact includes the IPA, SHA-256 report and simulator screenshot.
+The public branch `codex/three-way-phone-link` triggers `.github/workflows/three-way-iphone.yml` on a public macOS runner. It tests local conversation storage, builds the device archive, verifies metadata and arm64 packaging, checks that no dashboard is bundled in the IPA, applies the ad-hoc template signature, and runs the connector simulator UI test. The artifact contains the IPA, checksum report, and simulator screenshots.
 
-On macOS: `bash scripts/build_ipa.sh`. For Worker tests: `npm ci && npm test`. `python3 scripts/prepare_assets.py` generates Cloudflare's dashboard assets only. Worker deployment is separate and requires the owner's Cloudflare account; no deploy credentials or signing secrets enter Actions.
+Run Worker tests with `npm ci && npm test`. On macOS, run `bash scripts/build_ipa.sh`. `python3 scripts/prepare_assets.py` regenerates the Worker’s dashboard assets. Worker deployment is separate and requires the owner’s Cloudflare account.
 
-The Video Pilot Build 49 IPA informed the phone-to-Cloudflare hosting pattern. AI Room has its own bundle identifier, Keychain service and pairing keys. This update does not change Video Pilot.
+The Video Pilot Build 49 IPA informed the background-hosting pattern. AI Room retains its own bundle identifier, Keychain services, and pairing credentials.

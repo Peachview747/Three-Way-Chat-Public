@@ -1,5 +1,11 @@
 # Verification
 
+## Build 8 assistants, background hosting, and private backup
+
+Build 8 adds ChatGPT Codex device authorization, Claude Code service authorization, Keychain token storage and refresh, real assistant responses, stop handling, and multi-round discussion. It adds an audio background mode and silent keep-alive modeled on Video Pilot Build 49. Conversation files remain readable after the first unlock so replies can finish in the background. The Worker accepts phone-authenticated backups and writes them through an encrypted `GITHUB_TOKEN` secret to the private data repository. The secret must be configured before backup becomes active.
+
+Miniflare tests cover backup authentication, input validation and the missing-secret failure in addition to the relay suite. Native compilation, simulator UI validation, and IPA packaging run on the macOS Actions runner. Provider authorization and long-duration background behavior require physical-device testing because CI has no user service accounts or iOS background lifecycle.
+
 ## Build 6 app rename
 
 Display name, connector text, website branding, export filename, and IPA artifact names use AI Room. Stable internal identifiers and conversation storage are preserved. Native build validation remains pending on macOS.
@@ -21,4 +27,3 @@ Build 3 changes only the app interface and packaging: the native connector repla
 - The owner has opened the previous app successfully inside LiveContainer. A real phone-to-Cloudflare pairing has not yet been confirmed.
 - Build 3's workflow runs the native storage tests, device archive, connector-only package validation and new connector simulator test. Results are recorded in the PR and distributed build report.
 - Private pairing keys and conversations are excluded from public source and artifacts.
-- GPT and Claude sign-in/inference and background operation are not implemented or verified by this update.
