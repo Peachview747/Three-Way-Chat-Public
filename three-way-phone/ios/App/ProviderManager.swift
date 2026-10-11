@@ -204,18 +204,18 @@ final class ProviderManager: ObservableObject, AssistantServing {
         } else {
             result = try await postJSON(url: URL(string: "https://platform.claude.com/v1/oauth/token")!, body: ["grant_type":"refresh_token", "refresh_token":saved.refreshToken, "client_id":claudeClientID, "scope":claudeScope])
         }
-        try saveToken(result, provider: provider, oldRefresh: saved.refreshToken)
+        try saveToken(result, provider: provider, oldRefresh: saved.refreshToken, oldAccount: saved.accountID)
         guard let updated = CredentialStore.read(provider) else { throw ProviderFailure("Reconnect this assistant service.") }
         return updated
     }
 
-    private func saveToken(_ json: [String: Any], provider: String, oldRefresh: String = "") throws {
+    private func saveToken(_ json: [String: Any], provider: String, oldRefresh: String = "", oldAccount: String? = nil) throws {
         guard let access = json["access_token"] as? String else { throw ProviderFailure("The service did not return a login token.") }
         let refresh = json["refresh_token"] as? String ?? oldRefresh
         guard !refresh.isEmpty else { throw ProviderFailure("The service did not return a renewable login.") }
         let expires = (json["expires_in"] as? Double) ?? Double(json["expires_in"] as? Int ?? 3600)
         let identity = json["id_token"] as? String ?? access
-        let account = provider == "gpt" ? jwtClaim(identity, "chatgpt_account_id") : nil
+        let account = provider == "gpt" ? (jwtClaim(identity, "chatgpt_account_id") ?? oldAccount) : nil
         try CredentialStore.write(OAuthCredential(accessToken: access, refreshToken: refresh,
             expiresAt: Date().timeIntervalSince1970 + expires, accountID: account), account: provider)
     }
@@ -258,7 +258,8 @@ private func jwtClaim(_ token: String, _ name: String) -> String? {
     var raw = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
     raw += String(repeating: "=", count: (4 - raw.count % 4) % 4)
     guard let data = Data(base64Encoded: raw), let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-    return body[name] as? String
+    if let direct = body[name] as? String { return direct }
+    return (body["https://api.openai.com/auth"] as? [String: Any])?[name] as? String
 }
 private func apiFailure(_ data: Data, service: String, status: Int) -> ProviderFailure {
     let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
