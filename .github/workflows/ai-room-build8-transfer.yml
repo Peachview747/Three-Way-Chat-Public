@@ -1,0 +1,43 @@
+name: Privately transfer AI Room build 8
+on:
+  push:
+    branches: ['codex/three-way-phone-link']
+    paths: ['.github/workflows/ai-room-build8-transfer.yml', '.github/ai-room-transfer-public.pem']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve validated Build 8
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 38176124214
+          name: AI-Room-iPhone-0.1.0-Build-8
+          path: build
+      - name: Verify, encrypt, and stage transfer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          p=pathlib.Path('build/AI-Room-0.1.0-Build-8.ipa')
+          report=json.loads(p.with_suffix('.json').read_text())
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==report['sha256']
+          PY
+          openssl rand 32 > /tmp/ai-room-build8.key
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -in build/AI-Room-0.1.0-Build-8.ipa -out /tmp/AI-Room-0.1.0-Build-8.ipa.enc -pass file:/tmp/ai-room-build8.key
+          openssl pkeyutl -encrypt -pubin -inkey .github/ai-room-transfer-public.pem -in /tmp/ai-room-build8.key -out /tmp/AI-Room-0.1.0-Build-8.key.enc -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+          mkdir /tmp/ai-room-transfer
+          cp /tmp/AI-Room-0.1.0-Build-8.ipa.enc /tmp/AI-Room-0.1.0-Build-8.key.enc build/AI-Room-0.1.0-Build-8.json /tmp/ai-room-transfer/
+          git -C /tmp/ai-room-transfer init --initial-branch=transfer
+          git -C /tmp/ai-room-transfer config user.name github-actions
+          git -C /tmp/ai-room-transfer config user.email github-actions@github.com
+          git -C /tmp/ai-room-transfer add .
+          git -C /tmp/ai-room-transfer commit -m 'Encrypted Build 8 transfer'
+          git -C /tmp/ai-room-transfer remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git -C /tmp/ai-room-transfer push --force origin HEAD:refs/heads/codex/encrypted-build8-transfer
