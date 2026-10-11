@@ -3,6 +3,7 @@ let pendingSend = null, room = localStorage.getItem('threeway-room') || '', targ
 const $ = id => document.getElementById(id);
 const notice = text => { $('notice').textContent = text; };
 const native = !!window.webkit?.messageHandlers?.threeway;
+let pairingPrompted = false;
 const waiting = new Map();
 window.threeWayReceive = encoded => {
   const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
@@ -26,7 +27,7 @@ async function api(action, body = {}) {
   });
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401 && !$('pairing').open) $('pairing').showModal();
+    if (response.status === 401 && !pairingPrompted) { pairingPrompted = true; $('pairing').showModal(); }
     throw new Error(result.error || 'Request failed.');
   }
   return result;
@@ -113,7 +114,10 @@ for (const provider of ['gpt','claude']) $(provider+'-login').onclick = async ()
   try { const result = await post('login',{provider}); notice(result.notice); await refresh(); }
   catch(e) { notice(e.message); }
 };
-$('connections-button').onclick = () => { $('connections').hidden = !$('connections').hidden; };
+$('connections-button').onclick = () => {
+  if (!native && !current) $('pairing').showModal();
+  else $('connections').hidden = !$('connections').hidden;
+};
 $('about-button').onclick = () => $('about').showModal();
 $('export').onclick = async () => {
   try { const result = await api('export'); if (native) { await api('share'); return; } const url = URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'})); const link = document.createElement('a'); link.href=url; link.download='three-way-conversations.json'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }

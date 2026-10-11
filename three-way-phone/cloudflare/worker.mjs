@@ -41,8 +41,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/health' && request.method === 'GET') return json({ app: 'three-way-phone-link', protocol: PROTOCOL });
-    if (assets[url.pathname] && ['GET', 'HEAD'].includes(request.method)) {
-      const [mime, body] = assets[url.pathname];
+    const asset = assets[url.pathname === '/index.html' ? '/' : url.pathname];
+    if (asset && ['GET', 'HEAD'].includes(request.method)) {
+      const [mime, body] = asset;
       return new Response(request.method === 'HEAD' ? null : body, { headers: { ...security, 'Content-Type': mime } });
     }
     if (url.pathname === '/api/session' && request.method === 'POST') {
