@@ -1,0 +1,9 @@
+{
+  "name": "three-way-phone-link",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "devDependencies": { "miniflare": "5.20261001.0-alpha" }
+}

@@ -1,0 +1,32 @@
+name: Three Way iPhone connection build
+on:
+  push:
+    branches: ['codex/three-way-phone-link']
+    paths: ['three-way-phone/**', '.github/workflows/three-way-iphone.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: three-way-iphone-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  iphone:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build and validate sideload IPA
+        run: bash three-way-phone/scripts/build_ipa.sh
+      - name: Upload IPA and validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: Three-Way-iPhone-0.1.0-Build-1
+          path: |
+            three-way-phone/.build/Three-Way-0.1.0-Build-1.ipa
+            three-way-phone/.build/Three-Way-0.1.0-Build-1.json
+          if-no-files-found: error
+          retention-days: 7

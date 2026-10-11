@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Three Way · Phone connection</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><a href="/" class="brand">③ <span>Three Way</span></a><span class="badge">PHONE CONNECTION</span></header>
+<section class="hero"><p class="eyebrow">YOUR PHONE. YOUR SHARED ROOM.</p><h1>Keep the conversation connected.</h1><p>Start Three Way on your iPhone, then use this page from any browser.</p></section>
+<section class="card"><div class="status-row"><span id="dot" class="dot"></span><div><h2 id="status">Pair this browser</h2><p id="detail">Open the private website link shared from the iPhone app.</p></div><button id="refresh" type="button">Refresh</button></div><p class="scope">This build connects your iPhone and website. GPT and Claude connections come later.</p></section>
+<section id="pair-card" class="card"><h2>Have a pairing link?</h2><p>Paste the private website link from the app here.</p><form id="pair-form"><input id="pair-link" type="password" autocomplete="off" aria-label="Private website link" placeholder="Paste your private link"><button type="submit">Pair browser</button></form></section>
+<section class="card conversation"><div class="section-heading"><h2>Connection test messages</h2><button id="logout" type="button" hidden>Unpair browser</button></div><p id="empty">Send a message from the app or this page to check the connection.</p><div id="messages" aria-live="polite"></div><form id="composer"><label for="text">Your message</label><textarea id="text" maxlength="2000" rows="3" placeholder="Try: Hello from the website" disabled></textarea><div class="send-row"><span id="send-note">Connect the iPhone app to send.</span><button id="send" type="submit" disabled>Send message ↑</button></div></form><p id="error" role="alert"></p></section>
+<footer>Keep Three Way open on the iPhone while connected. The latest 100 test messages are saved privately on Cloudflare. No assistant requests or API billing.</footer>
+</main></body></html>

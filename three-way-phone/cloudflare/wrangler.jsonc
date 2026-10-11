@@ -1,0 +1,9 @@
+{
+  "name": "three-way-chat",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-10",
+  "durable_objects": { "bindings": [{ "name": "PHONE_ROOM", "class_name": "PhoneRoom" }] },
+  "migrations": [{ "tag": "three-way-link-v1", "new_sqlite_classes": ["PhoneRoom"] }],
+  "observability": { "enabled": true, "head_sampling_rate": 0.05 },
+  "vars": { "ROOM_ID": "SET_AT_DEPLOYMENT" }
+}
