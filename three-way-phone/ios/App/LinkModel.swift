@@ -26,24 +26,6 @@ struct LinkProfile: Codable {
     }
 }
 
-struct LinkMessage: Codable, Identifiable, Equatable {
-    let id: String
-    let source: String
-    let text: String
-    let created: String
-    var title: String { source == "iphone" ? "Your iPhone" : "Your browser" }
-}
-
-struct LinkState: Decodable {
-    let type: String
-    let `protocol`: String?
-    let connected: Bool?
-    let messages: [LinkMessage]?
-    let error: String?
-}
-
-struct PendingMessage: Codable { let id: String; let text: String }
-private struct LocalHistory: Codable { let messages: [LinkMessage]; let pending: PendingMessage? }
 enum LinkFailure: LocalizedError {
     case message(String)
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
@@ -80,11 +62,9 @@ final class LinkModel: ObservableObject {
     @Published private(set) var wantsConnection = false
     @Published private(set) var status = "Pair your iPhone"
     @Published private(set) var detail = "Import your Three Way Phone Setup file to begin."
-    @Published private(set) var messages: [LinkMessage] = []
-    @Published private(set) var pending: PendingMessage?
-    @Published var draft = ""
     @Published var notice = ""
     @Published var keepScreenOn = true { didSet { updateScreen() } }
+    let store = ConversationStore()
     private var runner: Task<Void, Never>?
     private var heartbeat: Task<Void, Never>?
     private var socket: URLSessionWebSocketTask?
@@ -92,20 +72,12 @@ final class LinkModel: ObservableObject {
     private var foreground = true
     private var generation = UUID()
     private var lastReceived = Date.distantPast
-    private static var historyURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ThreeWay/link-history.json")
-    }
 
     init() {
         if let saved = ProfileStore.read(), (try? saved.validate()) != nil {
-            profile = saved; status = "Ready to connect"; detail = "Tap Connect to link this iPhone to your website."
-        }
-        if let data = try? Data(contentsOf: Self.historyURL), let history = try? JSONDecoder().decode(LocalHistory.self, from: data) {
-            messages = Array(history.messages.suffix(100)); pending = history.pending
-            if let pending { draft = pending.text }
+            profile = saved; status = "Ready to connect"; detail = "Connect this iPhone to your website."
         }
     }
-
     func importProfile(from url: URL) throws {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
@@ -113,11 +85,8 @@ final class LinkModel: ObservableObject {
         guard size > 0 && size <= 8192 else { throw LinkFailure.message("The setup file could not be read.") }
         let profile = try JSONDecoder().decode(LinkProfile.self, from: Data(contentsOf: url))
         try profile.validate(); try ProfileStore.write(profile)
-        disconnect()
-        if self.profile?.room != profile.room { messages = []; pending = nil; draft = ""; saveHistory() }
-        self.profile = profile; status = "Ready to connect"; detail = "Pairing saved. Tap Connect."
+        disconnect(); self.profile = profile; status = "Ready to connect"; detail = "Pairing saved. Tap Connect."
     }
-
     func connect() {
         guard profile != nil else { return }
         wantsConnection = true
@@ -126,7 +95,7 @@ final class LinkModel: ObservableObject {
     func disconnect() {
         wantsConnection = false; cancelConnection()
         status = profile == nil ? "Pair your iPhone" : "Disconnected"
-        detail = "Tap Connect when you want to use the website."
+        detail = "Conversations stay saved on this iPhone."
     }
     func setForeground(_ active: Bool) {
         foreground = active
@@ -143,6 +112,11 @@ final class LinkModel: ObservableObject {
         socket?.cancel(with: .goingAway, reason: nil); socket = nil
         session?.invalidateAndCancel(); session = nil
         connected = false; updateScreen()
+    }
+    private func transmit(_ body: [String: Any], socket: URLSessionWebSocketTask) async throws {
+        let data = try JSONSerialization.data(withJSONObject: body)
+        guard data.count <= 750_000 else { throw LinkFailure.message("Room response is too large.") }
+        try await socket.send(.string(String(decoding: data, as: UTF8.self)))
     }
     private func startRunner() {
         guard runner == nil, let profile else { return }
@@ -181,7 +155,6 @@ final class LinkModel: ObservableObject {
                     } catch { if !Task.isCancelled { socket.cancel(with: .goingAway, reason: nil) } }
                 }
                 do {
-                    var sentPending = false
                     while !Task.isCancelled {
                         let received = try await socket.receive()
                         guard self.generation == current, self.socket === socket else { return }
@@ -194,38 +167,31 @@ final class LinkModel: ObservableObject {
                         case .data(let bytes): data = bytes
                         @unknown default: continue
                         }
-                        let state = try JSONDecoder().decode(LinkState.self, from: data)
-                        if state.type == "replaced" {
+                        guard let body = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let type = body["type"] as? String else { throw LinkFailure.message("Unexpected website response.") }
+                        if type == "replaced" {
                             self.status = "Another phone connected"; self.detail = "Tap Connect to use this iPhone instead."
-                            self.wantsConnection = false
-                            throw LinkFailure.message("Another phone connected.")
+                            self.wantsConnection = false; throw LinkFailure.message("Another phone connected.")
                         }
-                        if state.type == "error" {
-                            self.notice = state.error ?? "The message was not accepted."
-                            continue
-                        }
-                        guard state.type == "state", state.protocol == "three-way-link/1", state.connected == true,
-                              let messages = state.messages, messages.count <= 100 else {
-                            throw LinkFailure.message("The website returned an unexpected response.")
-                        }
-                        self.connected = true; self.status = "Connected to Cloudflare"
-                        self.detail = "Your iPhone and website share the messages below."
-                        self.messages = messages; attempt = 0; self.updateScreen()
-                        if let pending = self.pending, messages.contains(where: { $0.id == pending.id && $0.source == "iphone" && $0.text == pending.text }) {
-                            if self.draft == pending.text { self.draft = "" }
-                            self.pending = nil; self.notice = "Message confirmed by Cloudflare."
-                        }
-                        self.saveHistory()
-                        if !sentPending, let pending = self.pending {
-                            sentPending = true
-                            try await self.transmit(pending, socket: socket)
-                        }
+                        if type == "hello", body["protocol"] as? String == "three-way-host/1" {
+                            try await self.transmit(["type": "ready", "protocol": "three-way-host/1"], socket: socket)
+                        } else if type == "connected", body["protocol"] as? String == "three-way-host/1" {
+                            self.connected = true; self.status = "Connected to Cloudflare"
+                            self.detail = "Your iPhone hosts the room. Your laptop can be off."
+                            attempt = 0; self.updateScreen()
+                        } else if type == "request", self.connected,
+                                  let id = body["id"] as? String, UUID(uuidString: id) != nil,
+                                  let action = body["action"] as? String,
+                                  let input = body["body"] as? [String: Any] {
+                            let reply = self.store.handle(action: action, body: input)
+                            try await self.transmit(["type": "response", "id": id, "status": reply.status, "body": reply.body], socket: socket)
+                        } else { throw LinkFailure.message("Unexpected website response.") }
                     }
                 } catch {
                     if Task.isCancelled || self.generation != current { return }
                     self.connected = false; self.updateScreen()
                     if !self.wantsConnection {
-                        // Preserve an explicit replacement notice from the server.
+                        // Preserve the replacement notice from the server.
                     } else if (socket.response as? HTTPURLResponse)?.statusCode == 401 {
                         self.status = "Pairing needs updating"; self.detail = "Import your latest setup file."
                         self.wantsConnection = false
@@ -244,27 +210,6 @@ final class LinkModel: ObservableObject {
             }
             if self.generation == current { self.runner = nil }
         }
-    }
-    func send() async {
-        guard connected, let socket else { return }
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, text.utf16.count <= 2000 else { notice = "Enter a message of 1–2,000 characters."; return }
-        if pending == nil || pending?.text != text { pending = PendingMessage(id: UUID().uuidString.lowercased(), text: text) }
-        guard let pending else { return }
-        saveHistory(); notice = "Waiting for confirmation…"
-        do { try await transmit(pending, socket: socket) }
-        catch { notice = "The message is saved on this phone. Reconnect and retry." }
-    }
-    private func transmit(_ message: PendingMessage, socket: URLSessionWebSocketTask) async throws {
-        let body = ["type": "message", "id": message.id, "text": message.text]
-        let data = try JSONEncoder().encode(body)
-        try await socket.send(.string(String(decoding: data, as: UTF8.self)))
-    }
-    private func saveHistory() {
-        do {
-            try FileManager.default.createDirectory(at: Self.historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(LocalHistory(messages: messages, pending: pending)).write(to: Self.historyURL, options: [.atomic, .completeFileProtection])
-        } catch { notice = "Messages are connected, but the phone could not save its local copy." }
     }
     private func updateScreen() { UIApplication.shared.isIdleTimerDisabled = foreground && wantsConnection && keepScreenOn }
 }

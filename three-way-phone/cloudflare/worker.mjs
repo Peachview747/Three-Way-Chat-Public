@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { assets } from './assets.mjs';
 
-const PROTOCOL = 'three-way-link/1';
+const PROTOCOL = 'three-way-host/1';
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const security = {
   'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
@@ -19,7 +19,7 @@ async function matches(key, expected) {
 }
 function bearer(request) { return request.headers.get('authorization')?.replace(/^Bearer /, '') || ''; }
 function browserKey(request) { return request.headers.get('cookie')?.match(/(?:^|;\s*)tw_link=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1] || ''; }
-async function readJSON(request, max = 8192) {
+async function readJSON(request, max = 65536) {
   if (request.headers.get('content-type')?.split(';')[0] !== 'application/json') throw new Error('Use JSON.');
   const reader = request.body?.getReader();
   if (!reader) throw new Error('Missing message.');
@@ -55,17 +55,16 @@ export default {
       if (request.headers.get('origin') !== url.origin) return json({ error: 'Request rejected.' }, 403);
       return json({ ok: true }, 200, { 'Set-Cookie': 'tw_link=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Strict' });
     }
-    if (!['/api/phone', '/api/state', '/api/message', '/api/reset'].includes(url.pathname)) return json({ error: 'Not found.' }, 404);
-    const phone = ['/api/phone', '/api/reset'].includes(url.pathname);
-    if (!await matches(phone ? bearer(request) : browserKey(request), phone ? env.PHONE_KEY_HASH : env.BROWSER_KEY_HASH)) return json({ error: 'Pair this device first.' }, 401);
-    if (url.pathname === '/api/phone') {
-      if (request.method !== 'GET' || request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json({ error: 'WebSocket required.' }, 426);
-      if (request.headers.has('origin') && request.headers.get('origin') !== url.origin) return json({ error: 'Request rejected.' }, 403);
-    } else if (url.pathname === '/api/message') {
-      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
-      if (request.headers.get('origin') !== url.origin) return json({ error: 'Request rejected.' }, 403);
-    } else if (url.pathname === '/api/state' && request.method !== 'GET') return json({ error: 'Method not allowed.' }, 405);
-    else if (url.pathname === '/api/reset' && request.method !== 'DELETE') return json({ error: 'Method not allowed.' }, 405);
+    const routes = {phone:'GET',state:'GET',export:'GET',send:'POST',new:'POST',refresh:'POST',login:'POST',stop:'POST'};
+    const action = url.pathname.slice('/api/'.length);
+    if (!url.pathname.startsWith('/api/') || !Object.hasOwn(routes, action)) return json({error:'Not found.'},404);
+    const phone = action === 'phone';
+    if (!await matches(phone ? bearer(request) : browserKey(request), phone ? env.PHONE_KEY_HASH : env.BROWSER_KEY_HASH)) return json({ error: 'Open the private Website link from your iPhone to pair this browser.' }, 401);
+    if (request.method !== routes[action]) return json({error:'Method not allowed.'},405);
+    if (phone) {
+      if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json({error:'WebSocket required.'},426);
+      if (request.headers.has('origin') && request.headers.get('origin') !== url.origin) return json({error:'Request rejected.'},403);
+    } else if (request.method === 'POST' && request.headers.get('origin') !== url.origin) return json({error:'Request rejected.'},403);
     // The one provisioned room has separate phone and browser credentials.
     // No arbitrary proxy destinations, commands, or provider requests exist.
     return env.PHONE_ROOM.getByName(env.ROOM_ID).fetch(request);
@@ -75,7 +74,9 @@ export default {
 export class PhoneRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
-    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, source TEXT NOT NULL, text TEXT NOT NULL, created TEXT NOT NULL)');
+    // Pending fetches keep the instance awake until the bounded request completes.
+    // Conversations are owned by the iPhone and never written to DO storage.
+    this.pending = new Map();
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
   phones() {
@@ -87,64 +88,58 @@ export class PhoneRoom extends DurableObject {
       return false;
     });
   }
-  snapshot() {
-    return { type: 'state', protocol: PROTOCOL, connected: this.phones().length > 0,
-      messages: this.ctx.storage.sql.exec('SELECT id, source, text, created FROM messages ORDER BY seq').toArray() };
+  finish(id, reply) {
+    const pending = this.pending.get(id); if (!pending) return;
+    clearTimeout(pending.timer); this.pending.delete(id); pending.resolve(reply);
   }
-  notify() {
-    const data = JSON.stringify(this.snapshot());
-    for (const ws of this.phones()) { try { ws.send(data); } catch { try { ws.close(1011, 'Reconnect'); } catch {} } }
-  }
-  append(body, source) {
-    if (!ID.test(body.id || '') || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000) throw new Error('Enter a message of 1–2,000 characters.');
-    const text = body.text.trim();
-    const existing = this.ctx.storage.sql.exec('SELECT id, source, text, created FROM messages WHERE id = ?', body.id).toArray()[0];
-    if (existing) {
-      if (existing.source !== source || existing.text !== text) throw new Error('This message ID is already in use.');
-      return existing;
+  disconnected(ws) {
+    for (const [id, pending] of this.pending) if (pending.ws === ws) {
+      this.finish(id, json({error:'The iPhone disconnected. Reopen Three Way and retry.'},503));
     }
-    const message = { id: body.id, source, text, created: new Date().toISOString() };
-    this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec('INSERT INTO messages (id, source, text, created) VALUES (?, ?, ?, ?)', message.id, source, text, message.created);
-      this.ctx.storage.sql.exec('DELETE FROM messages WHERE seq NOT IN (SELECT seq FROM messages ORDER BY seq DESC LIMIT 100)');
-    });
-    return message;
   }
   async fetch(request) {
-    const path = new URL(request.url).pathname;
-    if (path === '/api/phone') {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/phone') {
       for (const old of this.phones()) {
-        try { old.send(JSON.stringify({ type: 'replaced' })); } catch {}
-        old.close(4001, 'Another phone connected');
+        try { old.send(JSON.stringify({type:'replaced'})); } catch {}
+        this.disconnected(old); old.close(4001,'Another phone connected');
       }
       const [client, server] = Object.values(new WebSocketPair());
-      this.ctx.acceptWebSocket(server, ['phone']);
-      server.serializeAttachment({ acceptedAt: Date.now() });
-      server.send(JSON.stringify(this.snapshot()));
-      return new Response(null, { status: 101, webSocket: client });
+      this.ctx.acceptWebSocket(server,['phone']);
+      server.serializeAttachment({acceptedAt:Date.now(),ready:false});
+      server.send(JSON.stringify({type:'hello',protocol:PROTOCOL}));
+      return new Response(null,{status:101,webSocket:client});
     }
-    if (path === '/api/state') return json(this.snapshot());
-    if (path === '/api/reset') {
-      this.ctx.storage.sql.exec('DELETE FROM messages'); this.notify(); return json({ ok: true });
-    }
-    if (path === '/api/message') {
-      let body; try { body = await readJSON(request); } catch { return json({ error: 'Invalid message.' }, 400); }
-      // Recheck after reading the body: the phone can disconnect during the read.
-      if (!this.phones().length) return json({ error: 'Open Three Way on your iPhone and connect first.' }, 503);
-      try { const message = this.append(body, 'browser'); this.notify(); return json({ ok: true, message }); }
-      catch (error) { return json({ error: error.message }, 400); }
-    }
-    return json({ error: 'Not found.' }, 404);
+    const ws = this.phones().find(phone => phone.deserializeAttachment()?.ready);
+    if (!ws) return json({error:'Open Three Way on your iPhone and connect. Your phone hosts this room.'},503);
+    if (this.pending.size >= 8) return json({error:'The phone is busy. Retry in a moment.'},429);
+    let body;
+    try { body = request.method === 'GET' ? {room:url.searchParams.get('room') || ''} : await readJSON(request); }
+    catch { return json({error:'Invalid room request.'},400); }
+    if (this.pending.size >= 8) return json({error:'The phone is busy. Retry in a moment.'},429);
+    // The phone receives a named room operation, never an arbitrary URL or command.
+    const action = url.pathname.slice('/api/'.length), id = crypto.randomUUID();
+    return new Promise(resolve => {
+      const timer = setTimeout(() => this.finish(id,json({error:'The phone did not answer. Keep Three Way open, then retry.'},504)),10_000);
+      this.pending.set(id,{resolve,timer,ws});
+      try { ws.send(JSON.stringify({type:'request',id,action,body})); }
+      catch { this.finish(id,json({error:'The phone disconnected. Reopen Three Way.'},503)); }
+    });
   }
   webSocketMessage(ws, raw) {
     if (!this.phones().includes(ws)) return;
-    if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 8192) { ws.close(1009, 'Message too large'); return; }
+    if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 750_000) { this.disconnected(ws); ws.close(1009,'Response too large'); return; }
     try {
       const body = JSON.parse(raw);
-      if (body.type !== 'message') throw new Error('Unknown message type.');
-      this.append(body, 'iphone'); this.notify();
-    } catch { ws.send(JSON.stringify({ type: 'error', error: 'Message was not saved. Check its length and retry.' })); }
+      if (body.type === 'ready' && body.protocol === PROTOCOL) {
+        ws.serializeAttachment({...ws.deserializeAttachment(),ready:true});
+        ws.send(JSON.stringify({type:'connected',protocol:PROTOCOL})); return;
+      }
+      if (body.type !== 'response' || !ID.test(body.id || '') || ![200,400,404,500].includes(body.status) || !body.body || typeof body.body !== 'object' || Array.isArray(body.body)) throw new Error('Invalid response.');
+      // A replacement phone cannot complete the previous phone’s pending request.
+      if (this.pending.get(body.id)?.ws === ws) this.finish(body.id,json(body.body,body.status));
+    } catch { this.disconnected(ws); ws.close(1008,'Invalid host response'); }
   }
-  webSocketClose(ws, code) { try { ws.close(code === 1006 ? 1000 : code, 'Disconnected'); } catch {} }
-  webSocketError(ws) { try { ws.close(1011, 'Reconnect'); } catch {} }
+  webSocketClose(ws, code) { this.disconnected(ws); try { ws.close(code === 1006 ? 1000 : code,'Disconnected'); } catch {} }
+  webSocketError(ws) { this.disconnected(ws); try { ws.close(1011,'Reconnect'); } catch {} }
 }

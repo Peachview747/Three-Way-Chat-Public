@@ -1,47 +1,35 @@
-# Three Way — iPhone / Cloudflare connection build
+# Three Way for iPhone
 
-This build implements the owner's narrowed request: connect an iPhone app to the existing Three Way Worker and exchange test messages between the app and website. No GPT/Claude inference, provider sign-in, model API keys, paid API fallback, or Etsy operations are included.
+The original Three Way dashboard, bundled into a native iPhone app. The iPhone owns the conversations and maintains an outbound authenticated WebSocket to Cloudflare. A paired browser uses the same dashboard at https://three-way-chat.jcruzhoovertesla.workers.dev/ while the app is open. The laptop can be off.
 
-The native SwiftUI layout and outbound phone connection follow the architecture of the owner's Video Pilot 0.1.37 Build 49. Three Way has its own bundle identifier, Keychain service, icon, Worker, and pairing credentials. Video Pilot and its `tv` Worker are untouched.
+This milestone implements phone hosting and the Cloudflare connection. GPT and Claude are honestly shown as disconnected. Prompts save with the selected recipients; no inference, provider sign-in, API keys, credits, or listing publication is performed.
 
-## Use on the iPhone
+## Install and connect
 
-1. Sign and install `Three-Way-0.1.0-Build-1.ipa` with your existing sideload tool. The archive uses an ad-hoc template signature; it still needs personal Apple signing.
-2. Save `Three-Way-Phone-Setup.json` to the iPhone's Files app. This is a private pairing file; keep it out of Git and share it only with the owner of the phone.
-3. Open Three Way, tap **Import phone setup**, and select that file.
-4. Tap **Connect**. Wait for **Connected to Cloudflare**.
-5. Tap **Website link**, then open that private link in the browser you want to use. It pairs that browser for eight hours. The public URL by itself cannot read your messages.
-6. Send a test message on either screen. Both should show the same accepted message.
+1. Download the IPA from the public GitHub Actions build and sign it using your normal personal sideload method. It requires iOS 17 or later. It is a separate app from Video Pilot.
+2. Open Three Way. Its first screen is the original dashboard.
+3. Open **Connections → Import phone setup** and select the private `Three-Way-Phone-Setup.json` supplied separately. Pairing stays in the iPhone Keychain.
+4. The app connects to Cloudflare. Keep it open; screen-awake is enabled while connected. iOS may pause networking when locked or backgrounded. Reopen the app to reconnect.
+5. Use **Private Website link** to open or share the browser pairing link. Browser pairing lasts eight hours. The public address shows the interface; the private link grants access to this phone’s conversations.
 
-Keep the iPhone app open and connected. The laptop can be off. The app pauses when iOS puts it in the background and reconnects when reopened; it does not use a fake audio background mode. The optional keep-awake control only works while the app is in the foreground.
+Pairing files, private website links, conversations, credentials and signing certificates must never be committed to this public repository. The checked-in Worker has no account secrets.
 
-## Data and pairing
+## Hosting and storage
 
-The most recent 100 accepted test messages are retained in one SQLite-backed Durable Object on Cloudflare. The iPhone keeps a protected local copy. Messages are plain text rendered safely, up to 2,000 UTF-16 characters each. Browser sends require the phone to be online. A server acknowledgment confirms storage; it does not prove the other screen has already displayed the message.
+The same HTML, CSS and JavaScript are bundled into the app and served as static assets by Cloudflare. On the phone, a bridge restricted to the bundled main frame invokes the local conversation store. In another browser, authenticated requests pass through one Durable Object to the connected phone. Cloudflare does not persist conversations or produce assistant replies.
 
-The phone and browser have different random pairing keys. The setup file stores both; the app stores them in its Keychain. The Worker stores SHA-256 key hashes as secret bindings. Browser links carry their key in a URL fragment, which is removed immediately by the page; pairing sets an HttpOnly, Secure, SameSite cookie. Unpairing clears that browser cookie. Rotating the deployed keys revokes existing pairings. Never publish the setup file, private website link, or a real chat export.
-
-Only one phone connection is active at a time. A second connection replaces the first. Duplicate message IDs with identical content are accepted idempotently while retained in the 100-message window; conflicting content is rejected. No automatic assistant calls exist.
-
-## Build and verify
-
-The iOS app uses Apple frameworks only and targets iOS 17+. A Mac with Xcode and XcodeGen is required to compile it. Run `bash scripts/build_ipa.sh` on that Mac. `scripts/package_ipa.py` checks the bundle, version, device architecture, signature, and ZIP before reporting success. Windows cannot compile this native app.
-
-The independent GitHub workflow can build the IPA as a private Actions artifact. It never merges a PR or publishes a release. The generated IPA must be downloaded and checked before calling the build complete.
-
-For Worker tests, install the dev dependencies with `npm ci` and run `npm test`. The suite uses the real local Workers runtime; it makes no model requests. `python scripts/prepare_assets.py` updates the deployable web module. Deployment requires the `PHONE_ROOM` binding, SQLite migration, room ID, and the two secret key hashes. No paid plan is enabled by these source files.
+The phone writes history atomically with complete file protection before acknowledging changes. Concurrent phone and browser requests run on the main actor. Repeated request IDs deduplicate; changing their payload is rejected. Conversation IDs are persisted before use. Damaged history files are preserved and block writes. This build holds at most 50 rooms, 500 prompts and 600 KB of history; export is available. Deleting the app removes its local history.
 
 ## Connection protocol
 
-- `GET /health`: public app and protocol identification.
-- `GET /api/phone`: native WebSocket upgrade authenticated with the phone key in the Authorization header.
-- First socket frame: `state` with protocol `three-way-link/1`; the app marks connected only after this frame.
-- Phone sends `{type:"message",id:"<uuid-v4>",text:"..."}`; the Worker returns the canonical state after saving.
-- `ping` / `pong`: automatic hibernation-safe heartbeat.
-- `POST /api/session`: exchanges the browser pairing link for an eight-hour cookie; matching Origin is required.
-- `GET /api/state`: private bounded history and real phone socket status.
-- `POST /api/message`: private browser message; matching Origin and an online phone are required.
-- `POST /api/logout`: clears this browser's pairing cookie.
-- `DELETE /api/reset`: phone-key authenticated removal of the test history, used to clean up verification.
+`three-way-host/1` exchanges `hello → ready → connected` before browser operations can run. JSON requests contain `{type:"request", id, action, body}` and responses contain `{type:"response", id, status, body}`. Only state, export, send, new, refresh, login and stop are routed. Login explains that assistants are unavailable; stop has no inference to cancel. There is no arbitrary URL proxy, shell access or access to local files outside chat storage.
 
-The relay only accepts structured test messages. It cannot forward arbitrary URLs, run commands, access local files, or call assistants.
+One phone owns the connection. A replacement cancels the previous phone’s pending requests. There are at most eight in-flight requests, a ten-second response deadline, and bounded frames. Phone and browser credentials are separate; Cloudflare stores their SHA-256 hashes. Writes require the site’s own Origin. Browser cookies are Secure, HttpOnly and SameSite=Strict. The pairing fragment is removed from the browser address after use. Heartbeats use Durable Object WebSocket auto-responses; reconnects back off to thirty seconds.
+
+## Build and verify
+
+The feature branch `codex/three-way-phone-link` triggers `.github/workflows/three-way-iphone.yml` on a public macOS runner. No private repo minutes, signing secrets or paid services are configured. The workflow tests phone storage, generates the Xcode project, archives the device app, verifies arm64, metadata and bundled dashboard, applies an ad-hoc template signature, and uploads the IPA plus SHA-256 report. Personal signing is still required to install it.
+
+On macOS: `bash scripts/build_ipa.sh`. For Worker tests: `npm ci && npm test`. `python3 scripts/prepare_assets.py` generates both sets of dashboard assets. Worker deployment is separate from the public build and requires the owner’s Cloudflare account; no deploy credentials enter Actions.
+
+The Video Pilot Build 49 IPA was used to inspect the phone-to-Cloudflare hosting pattern. This app has its own bundle identifier, Keychain service, interface assets and pairing keys. It does not reuse Video Pilot’s media background modes or credentials.

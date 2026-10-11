@@ -18,6 +18,8 @@ assert info['CFBundleVersion'] == '1'
 assert info['CFBundleShortVersionString'] == '0.1.0'
 assert not info.get('UIBackgroundModes'), 'Chat must not use media background modes.'
 assert info.get('MinimumOSVersion') == '17.0'
+for asset in ['index.html', 'style.css', 'app.js']:
+    assert (app / 'Dashboard' / asset).is_file(), 'Missing bundled dashboard: ' + asset
 binary = app / info['CFBundleExecutable']
 magic, cpu = struct.unpack('<II', binary.read_bytes()[:8])
 assert magic == 0xfeedfacf and cpu == 0x0100000c, 'Expected a device arm64 Mach-O executable.'

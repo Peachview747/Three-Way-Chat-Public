@@ -7,99 +7,92 @@ import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 const ORIGIN = 'https://three-way-chat.jcruzhoovertesla.workers.dev';
 const key = () => randomBytes(32).toString('base64url');
 const hash = value => createHash('sha256').update(value).digest('hex');
-const tick = () => new Promise(resolve => setTimeout(resolve, 15));
+const tick = () => new Promise(resolve => setTimeout(resolve,15));
 async function fixture(t) {
-  const phoneKey = key(), browserKey = key(), room = randomUUID();
-  const mf = new Miniflare(convertV4MiniflareOptions({
-    modules: ['worker.mjs', 'assets.mjs'].map(name => ({type:'ESModule',path:fileURLToPath(new URL('../cloudflare/' + name, import.meta.url))})),
-    // The current packaged workerd supports dates through October 8.
-    // Production is also checked separately against Cloudflare's live runtime.
-    compatibilityDate: '2026-10-08',
-    bindings: { PHONE_KEY_HASH: hash(phoneKey), BROWSER_KEY_HASH: hash(browserKey), ROOM_ID: room },
-    durableObjects: { PHONE_ROOM: {className:'PhoneRoom',useSQLite:true} },
-    outboundService: () => { throw new Error('No external requests are allowed in connection tests.'); },
+  const phoneKey=key(), browserKey=key(), room=randomUUID();
+  const mf=new Miniflare(convertV4MiniflareOptions({
+    modules:['worker.mjs','assets.mjs'].map(name=>({type:'ESModule',path:fileURLToPath(new URL('../cloudflare/'+name,import.meta.url))})),
+    compatibilityDate:'2026-10-08',
+    bindings:{PHONE_KEY_HASH:hash(phoneKey),BROWSER_KEY_HASH:hash(browserKey),ROOM_ID:room},
+    durableObjects:{PHONE_ROOM:{className:'PhoneRoom',useSQLite:true}},
+    outboundService:()=>{throw new Error('No external requests allowed.');},
   }));
-  t.after(() => mf.dispose());
-  const fetch = (path, init) => mf.dispatchFetch(ORIGIN + path, init);
-  const session = await fetch('/api/session', {method:'POST',headers:{origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({room,key:browserKey})});
-  assert.equal(session.status, 200);
-  const cookie = session.headers.get('set-cookie').split(';')[0];
-  const state = async () => (await fetch('/api/state', {headers:{cookie}})).json();
-  const send = (text, id = randomUUID(), origin = ORIGIN) => fetch('/api/message', {method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:JSON.stringify({text,id})});
-  const connect = async (supplied = phoneKey) => {
-    const response = await fetch('/api/phone', {headers:{upgrade:'websocket',authorization:'Bearer ' + supplied}});
-    const socket = response.webSocket; const events = [];
-    if (socket) {
-      socket.addEventListener('message', event => { events.push(event.data === 'pong' ? 'pong' : JSON.parse(event.data)); });
-      socket.accept(); t.after(() => { try {socket.close();} catch {} });
+  t.after(()=>mf.dispose());
+  const fetch=(path,init)=>mf.dispatchFetch(ORIGIN+path,init);
+  const session=await fetch('/api/session',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({room,key:browserKey})});
+  assert.equal(session.status,200);
+  const cookie=session.headers.get('set-cookie').split(';')[0];
+  const post=(action,body={},origin=ORIGIN)=>fetch('/api/'+action,{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:JSON.stringify(body)});
+  const state=()=>fetch('/api/state?room=demo',{headers:{cookie}});
+  const connect=async (supplied=phoneKey)=>{
+    const response=await fetch('/api/phone',{headers:{upgrade:'websocket',authorization:'Bearer '+supplied}});
+    const socket=response.webSocket, events=[];
+    if(socket){
+      socket.addEventListener('message',event=>events.push(event.data==='pong'?'pong':JSON.parse(event.data)));
+      socket.accept();t.after(()=>{try{socket.close();}catch{}});
     }
-    const wait = async predicate => {
-      for (let i = 0; i < 200; i++) { const found = events.find(predicate); if (found) return found; await tick(); }
-      throw new Error('No matching phone acknowledgment.');
+    const wait=async predicate=>{
+      for(let i=0;i<200;i++){const found=events.find(predicate);if(found)return found;await tick();}
+      throw new Error('No matching host message.');
     };
-    return {response,socket,events,wait};
+    const ready=async()=>{
+      const hello=await wait(e=>e.type==='hello');assert.equal(hello.protocol,'three-way-host/1');
+      socket.send(JSON.stringify({type:'ready',protocol:'three-way-host/1'}));await wait(e=>e.type==='connected');
+    };
+    return {response,socket,events,wait,ready};
   };
-  return {mf,fetch,phoneKey,browserKey,room,cookie,state,send,connect};
+  return{mf,fetch,post,state,connect,phoneKey,browserKey,room,cookie};
 }
-
-test('pairing and phone authentication cannot be exchanged; origin and methods are enforced', async t => {
-  const f = await fixture(t);
-  assert.equal((await f.fetch('/api/state')).status, 401);
-  assert.equal((await f.connect(f.browserKey)).response.status, 401);
-  assert.equal((await f.fetch('/api/session',{method:'POST',headers:{origin:'https://other.example','content-type':'application/json'},body:JSON.stringify({room:f.room,key:f.browserKey})})).status,403);
-  assert.equal((await f.fetch('/api/session',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({room:f.room,key:f.phoneKey})})).status,401);
-  assert.equal((await f.send('blocked',randomUUID(),'https://other.example')).status,403);
-  assert.equal((await f.fetch('/api/message',{headers:{cookie:f.cookie}})).status,405);
-  assert.equal((await f.fetch('/api/reset',{method:'DELETE',headers:{cookie:f.cookie}})).status,401);
-});
-
-test('phone handshake, heartbeat, and real two-way messages share one canonical log', async t => {
-  const f = await fixture(t);
-  assert.equal((await f.state()).connected,false);
-  assert.equal((await f.send('offline')).status,503);
-  const p = await f.connect(); assert.equal(p.response.status,101);
-  const hello = await p.wait(e => e.type === 'state');
-  assert.equal(hello.protocol,'three-way-link/1'); assert.equal(hello.connected,true);
-  p.socket.send('ping'); await p.wait(e => e === 'pong');
-  const id = randomUUID();
-  p.socket.send(JSON.stringify({type:'message',id,text:'Hello from phone'}));
-  await p.wait(e => e.messages?.some(m => m.id === id));
-  const response = await f.send('Hello from browser'); assert.equal(response.status,200);
-  const saved = await response.json(); await p.wait(e => e.messages?.some(m => m.id === saved.message.id));
-  assert.deepEqual((await f.state()).messages.map(m => [m.source,m.text]),[['iphone','Hello from phone'],['browser','Hello from browser']]);
-  p.socket.close();
-  for(let i=0;i<100&&(await f.state()).connected;i++) await tick();
-  assert.equal((await f.state()).connected,false);
-});
-
-test('explicit retries deduplicate and a second phone replaces the first', async t => {
-  const f = await fixture(t); const first = await f.connect(); await first.wait(e => e.type === 'state');
-  const id = randomUUID(); assert.equal((await f.send('once',id)).status,200); assert.equal((await f.send('once',id)).status,200);
-  assert.equal((await f.send('changed',id)).status,400); assert.equal((await f.state()).messages.length,1);
-  const second = await f.connect(); await second.wait(e=>e.type==='state');
-  await first.wait(e=>e.type==='replaced');
-  first.socket.close();
-  second.socket.send(JSON.stringify({type:'message',id:randomUUID(),text:'replacement phone'}));
-  await second.wait(e=>e.messages?.some(m=>m.text==='replacement phone'));
-});
-
-test('malformed and oversized input is rejected, and concurrent writes retain the last 100', async t => {
-  const f=await fixture(t); const p=await f.connect(); await p.wait(e=>e.type==='state');
-  assert.equal((await f.send('x'.repeat(2001))).status,400);
-  assert.equal((await f.send('x','not-a-uuid')).status,400);
-  const replies=await Promise.all(Array.from({length:105},(_,i)=>f.send('Message '+i)));
-  assert.ok(replies.every(r=>r.status===200));
-  const state=await f.state(); assert.equal(state.messages.length,100); assert.equal(new Set(state.messages.map(m=>m.id)).size,100);
-  const after=await f.fetch('/api/reset',{method:'DELETE',headers:{authorization:'Bearer '+f.phoneKey}}); assert.equal(after.status,200);
-  assert.equal((await f.state()).messages.length,0);
-});
-
-test('public web assets do not contain keys, unsafe HTML rendering, or model endpoints', async t => {
+test('separate credentials, own-origin writes, and fixed routes protect the phone',async t=>{
   const f=await fixture(t);
-  const html=await (await f.fetch('/')).text(), js=await (await f.fetch('/app.js')).text();
+  assert.equal((await f.fetch('/api/state')).status,401);
+  assert.equal((await f.connect(f.browserKey)).response.status,401);
+  assert.equal((await f.fetch('/api/session',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/json'},body:JSON.stringify({room:f.room,key:f.phoneKey})})).status,401);
+  assert.equal((await f.post('send',{},'https://other.example')).status,403);
+  assert.equal((await f.fetch('/api/send',{headers:{cookie:f.cookie}})).status,405);
+  assert.equal((await f.fetch('/api/proxy?url=http://localhost',{headers:{cookie:f.cookie}})).status,404);
+  assert.equal((await f.fetch('/api/reset',{method:'DELETE',headers:{authorization:'Bearer '+f.phoneKey}})).status,404);
+});
+test('phone must complete its handshake; state and prompts are answered by the phone',async t=>{
+  const f=await fixture(t);assert.equal((await f.state()).status,503);
+  const p=await f.connect();await p.wait(e=>e.type==='hello');assert.equal((await f.state()).status,503);
+  await p.ready();p.socket.send('ping');await p.wait(e=>e==='pong');
+  const statePromise=f.state();const request=await p.wait(e=>e.action==='state');
+  assert.deepEqual(request.body,{room:'demo'});
+  const sentinel={rooms:[{id:'phone-only',title:'From phone'}],messages:[],connections:{gpt:{ready:false}}};
+  p.socket.send(JSON.stringify({type:'response',id:request.id,status:200,body:sentinel}));
+  assert.deepEqual(await(await statePromise).json(),sentinel);
+  const prompt={request_id:randomUUID(),room:'phone-only',text:'Private prompt',target:'both',rounds:2};
+  const sending=f.post('send',prompt);const write=await p.wait(e=>e.action==='send');
+  assert.deepEqual(write.body,prompt);
+  p.socket.send(JSON.stringify({type:'response',id:write.id,status:200,body:{ok:true,notice:'Saved on phone'}}));
+  assert.equal((await sending).status,200);
+  p.socket.close();await tick();assert.equal((await f.state()).status,503);
+});
+test('replacement cancels pending requests and cannot answer for the old phone',async t=>{
+  const f=await fixture(t),first=await f.connect();await first.ready();
+  const pending=f.state();const request=await first.wait(e=>e.action==='state');
+  const second=await f.connect();await second.ready();await first.wait(e=>e.type==='replaced');
+  assert.equal((await pending).status,503);
+  second.socket.send(JSON.stringify({type:'response',id:request.id,status:200,body:{wrong:true}}));
+  const next=f.state();const newRequest=await second.wait(e=>e.action==='state');
+  second.socket.send(JSON.stringify({type:'response',id:newRequest.id,status:400,body:{error:'Real phone validation'}}));
+  assert.equal((await next).status,400);
+});
+test('bounded concurrent operations reject overload and disconnect releases all waiters',async t=>{
+  const f=await fixture(t),p=await f.connect();await p.ready();
+  const requests=Array.from({length:8},()=>f.state());
+  for(let i=0;i<200&&p.events.filter(e=>e.type==='request').length<8;i++)await tick();
+  assert.equal((await f.state()).status,429);
+  p.socket.close();assert.ok((await Promise.all(requests)).every(r=>r.status===503));
+});
+test('oversized requests fail; public assets keep the original layout without credentials',async t=>{
+  const f=await fixture(t),p=await f.connect();await p.ready();
+  assert.equal((await f.post('send',{text:'x'.repeat(65537)})).status,400);
+  const html=await(await f.fetch('/')).text(),js=await(await f.fetch('/app.js')).text();
+  assert.ok(html.includes('Finally, all in the same room.')&&html.includes('Talk it through'));
   assert.ok(html.includes('GPT and Claude connections come later'));
   assert.ok(!html.includes(f.phoneKey)&&!js.includes(f.browserKey));
   assert.ok(!js.includes('innerHTML')&&!js.includes('backend-api')&&!js.includes('api.anthropic'));
-  const paired=await f.fetch('/api/logout',{method:'POST',headers:{origin:ORIGIN,cookie:f.cookie,'content-type':'application/json'},body:'{}'});
-  assert.ok(paired.headers.get('set-cookie').includes('Max-Age=0'));
+  const logout=await f.post('logout');assert.ok(logout.headers.get('set-cookie').includes('Max-Age=0'));
 });
