@@ -33,10 +33,10 @@ jobs:
       - name: Upload IPA and validation
         uses: actions/upload-artifact@v4
         with:
-          name: Three-Way-iPhone-0.1.0-Build-3
+          name: Three-Way-iPhone-0.1.0-Build-4
           path: |
-            three-way-phone/.build/Three-Way-0.1.0-Build-3.ipa
-            three-way-phone/.build/Three-Way-0.1.0-Build-3.json
+            three-way-phone/.build/Three-Way-0.1.0-Build-4.ipa
+            three-way-phone/.build/Three-Way-0.1.0-Build-4.json
             three-way-phone/.build/connector-screenshots
           if-no-files-found: error
           retention-days: 7

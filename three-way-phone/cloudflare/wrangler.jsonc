@@ -1,5 +1,5 @@
 {
-  "name": "three-way-chat",
+  "name": "ai",
   "main": "worker.mjs",
   "compatibility_date": "2026-10-10",
   "durable_objects": { "bindings": [{ "name": "PHONE_ROOM", "class_name": "PhoneRoom" }] },

@@ -4,7 +4,7 @@ import { randomBytes, createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 
-const ORIGIN = 'https://three-way-chat.jcruzhoovertesla.workers.dev';
+const ORIGIN = 'https://ai.jch.workers.dev';
 const key = () => randomBytes(32).toString('base64url');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const tick = () => new Promise(resolve => setTimeout(resolve,15));

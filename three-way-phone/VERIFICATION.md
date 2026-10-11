@@ -1,5 +1,11 @@
 # Verification
 
+## Build 4 URL update
+
+The connector validation, displayed website, relay test origin, and Worker name now target `https://ai.jch.workers.dev/`. Packaging and Actions artifact names use Build 4. Import an updated private setup file after updating in place. Deployment to the `jch` Cloudflare account and a new device IPA build require external credentials/macOS tooling; local relay tests do not establish live deployment or device behavior. Background handling is unchanged.
+
+## Earlier builds
+
 Build 3 changes only the app interface and packaging: the native connector replaces the embedded chat dashboard. The Cloudflare dashboard, relay, conversation store, Keychain service, bundle identifier and storage schema are unchanged.
 
 - Previous Build 2 passed public Actions run 38098509343, including native storage tests, device archive, IPA checks and embedded-dashboard simulator tests.

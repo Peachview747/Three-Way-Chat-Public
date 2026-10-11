@@ -61,7 +61,7 @@ private struct ConnectorView: View {
                 }
 
                 Section {
-                    Text("three-way-chat.jcruzhoovertesla.workers.dev")
+                    Text("ai.jch.workers.dev")
                         .font(.subheadline)
                         .textSelection(.enabled)
                     if let profile = model.profile {
