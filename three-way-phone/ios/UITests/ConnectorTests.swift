@@ -19,6 +19,14 @@ final class ConnectorTests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
+        let help = app.buttons["setup-help"]
+        XCTAssertTrue(help.exists)
+        help.tap()
+        XCTAssertTrue(app.navigationBars["Setup and browser pairing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["1. Get your private setup file"].exists)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(setup.waitForExistence(timeout: 5))
+
         setup.tap()
         let cancel = app.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 10))

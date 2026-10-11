@@ -1,5 +1,9 @@
 # Verification
 
+## Build 5 setup guidance
+
+Added an in-app setup guide and manual browser-pairing code controls. Updated the website dialog and regenerated its deployed assets. The connector UI test now opens and dismisses setup help before testing import cancellation. Native UI tests require the macOS Actions runner and have not been run in this Linux environment.
+
 ## Build 4 URL update
 
 The connector validation, displayed website, relay test origin, and Worker name now target `https://ai.jch.workers.dev/`. Packaging and Actions artifact names use Build 4. Import an updated private setup file after updating in place. Deployment to the `jch` Cloudflare account and a new device IPA build require external credentials/macOS tooling; local relay tests do not establish live deployment or device behavior. Background handling is unchanged.

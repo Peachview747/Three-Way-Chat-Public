@@ -10,6 +10,10 @@ Build 4 targets `https://ai.jch.workers.dev/`. Deploy the `ai` Worker in the Clo
 
 The background behavior is unchanged by this URL update.
 
+## Setup guidance (Build 5)
+
+The connector includes **How to set up and pair a browser**, which explains obtaining the private setup file, importing it from Files, connecting, and opening the private link on another device. After importing, **Pair a browser with codes instead** provides **Copy room code** and **Copy browser pairing code** for the website’s manual pairing dialog. The phone authentication key is never displayed or copied by these controls. Setup-file provisioning remains a separate website-owner operation.
+
 ## Install and connect
 
 1. Use the IPA from the public GitHub Actions build with your normal personal sideload method, or update the existing Three Way guest app inside LiveContainer. Requires iOS 17 or later. Preserve the existing app's data container when updating.

@@ -22,6 +22,7 @@ struct ThreeWayApp: App {
 private struct ConnectorView: View {
     @ObservedObject var model: LinkModel
     @State private var importing = false
+    @State private var showingSetupHelp = false
     private let green = Color(red: 0.18, green: 0.42, blue: 0.34)
 
     var body: some View {
@@ -38,6 +39,16 @@ private struct ConnectorView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
+                }
+
+                Section("Set up your phone and browser") {
+                    Text(model.profile == nil
+                         ? "First, save your private Three-Way-Phone-Setup.json file in the Files app on this iPhone."
+                         : "Your phone setup is saved. Connect, then share the private website link with your other device.")
+                    Button("How to set up and pair a browser", systemImage: "questionmark.circle") {
+                        showingSetupHelp = true
+                    }
+                    .accessibilityIdentifier("setup-help")
                 }
 
                 Section("Connection") {
@@ -72,6 +83,23 @@ private struct ConnectorView: View {
                             UIPasteboard.general.url = profile.website
                             model.notice = "Private website link copied. Open it in a browser on another device."
                         }
+                        DisclosureGroup("Pair a browser with codes instead") {
+                            Text("Use these only if you cannot open the private website link on your other device. Enter them in the website’s ‘Open your phone’s room’ dialog.")
+                                .font(.footnote)
+                            Text("Room code").font(.caption)
+                            Text(profile.room).textSelection(.enabled)
+                            Button("Copy room code") {
+                                UIPasteboard.general.string = profile.room
+                                model.notice = "Room code copied."
+                            }
+                            Text("Browser pairing code").font(.caption)
+                            Text("Copy this private code and paste it into the browser pairing field. Only share it with people who may access your room.")
+                                .font(.footnote)
+                            Button("Copy browser pairing code") {
+                                UIPasteboard.general.string = profile.browserKey
+                                model.notice = "Browser pairing code copied. Keep it private."
+                            }
+                        }
                     } else {
                         Text("Import your phone setup to get the private link for your room.")
                             .foregroundStyle(.secondary)
@@ -99,6 +127,35 @@ private struct ConnectorView: View {
             }
             .navigationTitle("Three Way Connector")
             .tint(green)
+            .sheet(isPresented: $showingSetupHelp) {
+                NavigationStack {
+                    List {
+                        Section("1. Get your private setup file") {
+                            Text("The person who manages your Three Way website must provide Three-Way-Phone-Setup.json for https://ai.jch.workers.dev/. Save it to Files on this iPhone.")
+                            Text("If you manage the website, the file must match your deployed room and pairing credentials. Installing the app or creating a GitHub repository does not create this file. Do not put it in the public repository.")
+                        }
+                        Section("2. Import and connect") {
+                            Text("Return to the connector, tap Import phone setup, and choose the JSON file in Files. The app connects automatically. Wait for Connected to Cloudflare. If setup is already saved, tap Connect to Cloudflare.")
+                        }
+                        Section("3. Open your room on another device") {
+                            Text("Under Chat website, tap Share private website link or Copy private website link. Open that exact link in your other device’s browser. It pairs the browser automatically; the public website address alone does not pair it.")
+                        }
+                        Section("If the website asks for codes") {
+                            Text("Under Chat website, expand Pair a browser with codes instead. Copy the room code into Room code and the browser pairing code into Browser pairing code, then select Pair this browser. Do not use the phone’s connection key.")
+                        }
+                        Section("If you cannot connect") {
+                            Text("No setup file: ask your website manager for it. An old-site setup file: request an updated file for ai.jch.workers.dev. Phone offline: keep this connector open and check its connection status. Your conversations stay on this iPhone.")
+                        }
+                    }
+                    .navigationTitle("Setup and browser pairing")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingSetupHelp = false }
+                        }
+                    }
+                }
+            }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
                 switch result {
                 case .success(let files):
