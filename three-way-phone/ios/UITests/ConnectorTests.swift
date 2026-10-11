@@ -23,7 +23,7 @@ final class ConnectorTests: XCTestCase {
         XCTAssertTrue(help.exists)
         help.tap()
         XCTAssertTrue(app.navigationBars["Setup and browser pairing"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["1. Get your private setup file"].exists)
+        XCTAssertTrue(app.staticTexts["setup-help-first-step"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
         XCTAssertTrue(setup.waitForExistence(timeout: 5))
 

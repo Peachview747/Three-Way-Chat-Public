@@ -155,6 +155,7 @@ private struct ConnectorView: View {
                     List {
                         Section("1. Get your private setup file") {
                             Text("The person who manages your AI Room website must provide AI-Room-Phone-Setup.json for https://ai.jch76.workers.dev/. Save it to Files on this iPhone.")
+                                .accessibilityIdentifier("setup-help-first-step")
                             Text("If you manage the website, the file must match your deployed room and pairing credentials. Installing the app or creating a GitHub repository does not create this file. Do not put it in the public repository.")
                         }
                         Section("2. Import and connect") {
