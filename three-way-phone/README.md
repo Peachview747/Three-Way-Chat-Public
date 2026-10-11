@@ -8,7 +8,7 @@ The existing Cloudflare room and private browser link remain valid. The relay pr
 
 - Raspberry Pi 5 running Raspberry Pi OS 64-bit
 - Reliable power and network access; Ethernet is preferred
-- The private `AI-Room-Phone-Setup.json` file
+- The private `AI-Room-Pi-Setup.json` file from the app-data repository
 - ChatGPT and Claude subscriptions that permit Codex CLI and Claude Code login
 - Optional GitHub access to `Peachview747/Three-Way-Chat-App-Data` for encrypted private-repository backup
 
@@ -21,7 +21,7 @@ Copy the private setup JSON onto the Pi, then run:
 ```bash
 git clone --branch codex/three-way-phone-link https://github.com/Peachview747/Three-Way-Chat-Public.git
 cd Three-Way-Chat-Public/three-way-phone/pi-host
-sudo ./install.sh /path/to/AI-Room-Phone-Setup.json
+sudo ./install.sh /path/to/AI-Room-Pi-Setup.json
 ```
 
 The installer prints the private website link. Save that link on the iPhone and iPad; opening it pairs each browser automatically.
