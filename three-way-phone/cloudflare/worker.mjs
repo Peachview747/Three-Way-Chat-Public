@@ -11,14 +11,38 @@ const security = {
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
   status, headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', ...extra },
 });
-async function matches(key, expected) {
-  if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(key) || !/^[a-f0-9]{64}$/.test(expected || '')) return false;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+async function matchesHash(value, expected, pattern) {
+  if (typeof value !== 'string' || !pattern.test(value) || !/^[a-f0-9]{64}$/.test(expected || '')) return false;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   const target = Uint8Array.from(expected.match(/../g), x => parseInt(x, 16));
   return crypto.subtle.timingSafeEqual(digest, target);
 }
+const matchesKey = (key, expected) => matchesHash(key, expected, /^[A-Za-z0-9_-]{43}$/);
+const matchesPin = (pin, expected) => matchesHash(pin, expected, /^\d{6}$/);
 function bearer(request) { return request.headers.get('authorization')?.replace(/^Bearer /, '') || ''; }
-function browserKey(request) { return request.headers.get('cookie')?.match(/(?:^|;\s*)tw_link=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1] || ''; }
+function browserSession(request) { return request.headers.get('cookie')?.match(/(?:^|;\s*)tw_session=([0-9]{10,13}\.[A-Za-z0-9_-]{43})(?:;|$)/)?.[1] || ''; }
+function base64URL(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+}
+function signingKey(secret) {
+  if (typeof secret !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(secret)) return null;
+  const padded = secret.replaceAll('-', '+').replaceAll('_', '/') + '=';
+  return Uint8Array.from(atob(padded), character => character.charCodeAt(0));
+}
+async function sessionSignature(expires, room, secret) {
+  const bytes = signingKey(secret); if (!bytes) return '';
+  const key = await crypto.subtle.importKey('raw', bytes, {name:'HMAC', hash:'SHA-256'}, false, ['sign']);
+  return base64URL(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${expires}.${room}`))));
+}
+async function validSession(value, room, secret) {
+  const [rawExpires, supplied, extra] = value.split('.');
+  const expires = Number(rawExpires), now = Math.floor(Date.now() / 1000);
+  if (extra !== undefined || !Number.isSafeInteger(expires) || expires <= now || expires > now + 28_860 || !/^[A-Za-z0-9_-]{43}$/.test(supplied || '')) return false;
+  const expected = await sessionSignature(expires, room, secret);
+  return expected !== '' && crypto.subtle.timingSafeEqual(new TextEncoder().encode(supplied), new TextEncoder().encode(expected));
+}
 async function readJSON(request, max = 65536) {
   if (request.headers.get('content-type')?.split(';')[0] !== 'application/json') throw new Error('Use JSON.');
   const reader = request.body?.getReader();
@@ -68,17 +92,26 @@ export default {
       return new Response(request.method === 'HEAD' ? null : body, { headers: { ...security, 'Content-Type': mime } });
     }
     if (url.pathname === '/api/session' && request.method === 'POST') {
-      if (request.headers.get('origin') !== url.origin) return json({ error: 'Open the pairing link in this browser.' }, 403);
-      let body; try { body = await readJSON(request, 1024); } catch { return json({ error: 'Invalid pairing code.' }, 400); }
-      if (body.room !== env.ROOM_ID || !await matches(body.key, env.BROWSER_KEY_HASH)) return json({ error: 'The pairing code did not match.' }, 401);
-      return json({ ok: true }, 200, { 'Set-Cookie': `tw_link=${body.key}; Path=/api; Max-Age=28800; HttpOnly; Secure; SameSite=Strict` });
+      if (request.headers.get('origin') !== url.origin) return json({ error: 'Open AI Room in this browser.' }, 403);
+      let body; try { body = await readJSON(request, 1024); } catch { return json({ error: 'Enter a six-digit PIN.' }, 400); }
+      if (typeof body.pin !== 'string' || !/^\d{6}$/.test(body.pin)) return json({ error: 'Enter a six-digit PIN.' }, 400);
+      const room = env.PHONE_ROOM.getByName(env.ROOM_ID);
+      const checked = await room.fetch('https://ai-room.internal/__session', {
+        method:'POST', headers:{'Content-Type':'application/json','X-Client-IP':request.headers.get('CF-Connecting-IP') || 'unknown'},
+        body:JSON.stringify({pin:body.pin}),
+      });
+      if (!checked.ok) return checked;
+      const expires = Math.floor(Date.now() / 1000) + 28_800;
+      const signature = await sessionSignature(expires, env.ROOM_ID, env.SESSION_SIGNING_KEY);
+      if (!signature) return json({error:'AI Room sign-in is not configured.'},503);
+      return json({ ok: true }, 200, { 'Set-Cookie': `tw_session=${expires}.${signature}; Path=/api; Max-Age=28800; HttpOnly; Secure; SameSite=Strict` });
     }
     if (url.pathname === '/api/logout' && request.method === 'POST') {
       if (request.headers.get('origin') !== url.origin) return json({ error: 'Request rejected.' }, 403);
-      return json({ ok: true }, 200, { 'Set-Cookie': 'tw_link=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Strict' });
+      return json({ ok: true }, 200, { 'Set-Cookie': 'tw_session=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Strict' });
     }
     if (url.pathname === '/api/backup' && request.method === 'POST') {
-      if (!await matches(bearer(request), env.PHONE_KEY_HASH)) return json({error:'Host authorization failed.'},401);
+      if (!await matchesKey(bearer(request), env.PHONE_KEY_HASH)) return json({error:'Host authorization failed.'},401);
       let history; try { history = await readJSON(request,750_000); } catch { return json({error:'Invalid conversation backup.'},400); }
       if (!Array.isArray(history.rooms) || !Array.isArray(history.messages)) return json({error:'Invalid conversation backup.'},400);
       return backupToGitHub(history,env);
@@ -87,7 +120,10 @@ export default {
     const action = url.pathname.slice('/api/'.length);
     if (!url.pathname.startsWith('/api/') || !Object.hasOwn(routes, action)) return json({error:'Not found.'},404);
     const phone = action === 'phone';
-    if (!await matches(phone ? bearer(request) : browserKey(request), phone ? env.PHONE_KEY_HASH : env.BROWSER_KEY_HASH)) return json({ error: 'Open your Raspberry Pi’s private website link to pair this browser.' }, 401);
+    const authorized = phone
+      ? await matchesKey(bearer(request), env.PHONE_KEY_HASH)
+      : await validSession(browserSession(request), env.ROOM_ID, env.SESSION_SIGNING_KEY);
+    if (!authorized) return json({ error: 'Enter your AI Room PIN to connect to the Raspberry Pi.' }, 401);
     if (request.method !== routes[action]) return json({error:'Method not allowed.'},405);
     if (phone) {
       if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json({error:'WebSocket required.'},426);
@@ -102,6 +138,7 @@ export default {
 export class PhoneRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
+    this.env = env;
     // Pending fetches keep the instance awake until the bounded request completes.
     // Conversations are owned by the Raspberry Pi and never written to DO storage.
     this.pending = new Map();
@@ -127,6 +164,28 @@ export class PhoneRoom extends DurableObject {
   }
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === '/__session' && request.method === 'POST') {
+      const client = request.headers.get('X-Client-IP') || 'unknown';
+      const clientDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(client));
+      const attemptKey = `pin:${base64URL(new Uint8Array(clientDigest))}`;
+      const now = Date.now(), windowMs = 5 * 60_000, blockMs = 15 * 60_000;
+      let attempt = await this.ctx.storage.get(attemptKey) || {started:now, failures:0, blockedUntil:0};
+      if (attempt.blockedUntil > now) return json({error:'Too many PIN attempts. Try again in 15 minutes.'},429,{'Retry-After':'900'});
+      if (now - attempt.started > windowMs) attempt = {started:now, failures:0, blockedUntil:0};
+      let body; try { body = await readJSON(request, 1024); } catch { return json({error:'Enter a six-digit PIN.'},400); }
+      if (await matchesPin(body.pin, this.env.PAIRING_PIN_HASH)) {
+        await this.ctx.storage.delete(attemptKey);
+        return json({ok:true});
+      }
+      attempt.failures += 1;
+      if (attempt.failures >= 5) attempt.blockedUntil = now + blockMs;
+      await this.ctx.storage.put(attemptKey, attempt);
+      return json(
+        {error:attempt.blockedUntil ? 'Too many PIN attempts. Try again in 15 minutes.' : 'That PIN did not match.'},
+        attempt.blockedUntil ? 429 : 401,
+        attempt.blockedUntil ? {'Retry-After':'900'} : {},
+      );
+    }
     if (url.pathname === '/api/phone') {
       for (const old of this.phones()) {
         try { old.send(JSON.stringify({type:'replaced'})); } catch {}

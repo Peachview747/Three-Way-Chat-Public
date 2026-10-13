@@ -19,10 +19,9 @@ npm --prefix /opt/ai-room ci --omit=dev
 npm install --global @openai/codex @anthropic-ai/claude-code
 node - "$1" <<'NODE'
 const fs=require('fs'),source=process.argv[2],p=JSON.parse(fs.readFileSync(source));
-if(p.version!==1||p.server!=='https://ai.jch76.workers.dev/'||!/^[0-9a-f-]{36}$/i.test(p.room||'')||!/^[A-Za-z0-9_-]{43}$/.test(p.phoneKey||'')||!/^[A-Za-z0-9_-]{43}$/.test(p.browserKey||''))throw Error('The setup file is not valid for this AI Room Worker.');
+if(p.version!==1||p.server!=='https://ai.jch76.workers.dev/'||!/^[0-9a-f-]{36}$/i.test(p.room||'')||!/^[A-Za-z0-9_-]{43}$/.test(p.phoneKey||''))throw Error('The setup file is not valid for this AI Room Worker.');
 fs.writeFileSync('/etc/ai-room/host.json',JSON.stringify({version:1,server:p.server,room:p.room,phoneKey:p.phoneKey},null,2)+'\n',{mode:0o600});
-const query=new URLSearchParams({room:p.room,key:p.browserKey});
-console.log(`Private website link:\n${p.server}#${query}`);
+console.log(`AI Room website:\n${p.server}\nEnter the six-digit PIN configured in Cloudflare.`);
 NODE
 chown root:ai-room /etc/ai-room/host.json
 chmod 0640 /etc/ai-room/host.json

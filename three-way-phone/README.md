@@ -2,7 +2,7 @@
 
 AI Room now runs continuously on a Raspberry Pi 5 with 64-bit Raspberry Pi OS. The Pi owns conversations, connects to ChatGPT and Claude through their official command-line service logins, and maintains the authenticated outbound WebSocket to <https://ai.jch76.workers.dev/>. iPhone, iPad, and desktop devices are browser clients; no Mac, Xcode, inbound port, or iOS app is required.
 
-The existing Cloudflare room and private browser link remain valid. The relay protocol and credential hashes are unchanged, so the Pi can use the private setup JSON originally created for the phone connector.
+The Pi keeps the existing Cloudflare room and host credential from the private setup JSON. Browsers now connect with one six-digit PIN; room codes, browser pairing codes, and private pairing links are no longer required.
 
 ## Requirements
 
@@ -24,7 +24,7 @@ cd Three-Way-Chat-Public/three-way-phone/pi-host
 sudo ./install.sh /path/to/AI-Room-Pi-Setup.json
 ```
 
-The installer prints the private website link. Save that link on the iPhone and iPad; opening it pairs each browser automatically.
+The installer prints the AI Room website address. Open it on any device and enter the six-digit PIN configured as the Worker secret.
 
 Connect both subscriptions from the Pi terminal:
 
@@ -69,7 +69,7 @@ The browser supports ChatGPT, Claude, both services, and one to three discussion
 
 ## Cloudflare relay
 
-Cloudflare serves the dashboard and routes a fixed set of authenticated operations through the existing Durable Object. It does not store conversations or assistant credentials. Host and browser credentials remain separate. Browser writes require the site’s own Origin, cookies are Secure/HttpOnly/SameSite=Strict, and at most eight operations can be pending.
+Cloudflare serves the dashboard and routes a fixed set of authenticated operations through the existing Durable Object. It does not store conversations or assistant credentials. The PIN is stored only as a SHA-256 Worker secret, failed attempts are rate-limited, and a successful login creates a separate signed eight-hour browser session. Browser writes require the site’s own Origin, cookies are Secure/HttpOnly/SameSite=Strict, and at most eight operations can be pending.
 
 The internal `/api/phone` route and `PHONE_*` binding names are retained for compatibility with the deployed room and private setup file. They now identify the Raspberry Pi host.
 

@@ -123,21 +123,14 @@ $('export').onclick = async () => {
   try { const result = await api('export'); if (native) { await api('share'); return; } const url = URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'})); const link = document.createElement('a'); link.href=url; link.download='ai-room-conversations.json'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
   catch(e) { notice('Could not export conversations.'); }
 };
-async function pair(room, key) {
-  const response = await fetch('/api/session', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,key})});
-  const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Pairing failed.');
-  $('pairing').close(); notice('Browser paired. Connecting to your Raspberry Pi…'); await refresh();
+async function pair(pin) {
+  const response = await fetch('/api/session', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+  const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Sign-in failed.');
+  pairingPrompted = false; $('pairing').close(); notice('Connecting to Raspberry Pi…'); await refresh();
 }
-$('pairing-form').onsubmit = async event => { event.preventDefault(); try { await pair($('pair-room').value.trim(),$('pair-key').value.trim()); $('pair-key').value = ''; } catch(e) { $('pairing-error').textContent = e.message; } };
+$('pairing-form').onsubmit = async event => { event.preventDefault(); try { await pair($('pair-pin').value.trim()); $('pair-pin').value = ''; $('pairing-error').textContent = ''; } catch(e) { $('pairing-error').textContent = e.message; } };
 async function start() {
-  if (!native && location.hash) {
-    const profile = new URLSearchParams(location.hash.slice(1));
-    history.replaceState(null,'',location.pathname);
-    if (profile.has('room') && profile.has('key')) {
-      try { await pair(profile.get('room'),profile.get('key')); }
-      catch(e) { notice(e.message); $('pairing').showModal(); }
-    }
-  }
+  if (!native && location.hash) history.replaceState(null,'',location.pathname);
   await refresh();
 }
 start(); setInterval(() => { if (!document.hidden && !$('pairing').open) refresh(); },3000);
