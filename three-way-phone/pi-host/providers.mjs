@@ -7,7 +7,7 @@ import {promisify} from 'node:util';
 const exec=promisify(execFile);
 
 export class CLIProviders {
-  constructor({home,workdir,timeout=170_000}={}){this.home=home;this.workdir=workdir;this.timeout=timeout;this.cached=null;this.cachedAt=0}
+  constructor({home,workdir,timeout=170_000,systemAccess=process.env.AI_ROOM_SYSTEM_ACCESS==='1'}={}){this.home=home;this.workdir=workdir;this.timeout=timeout;this.systemAccess=systemAccess;this.cached=null;this.cachedAt=0}
   env(){return {...process.env,HOME:this.home,NO_COLOR:'1',TERM:'dumb'}}
   async commandStatus(command,args) {try{await exec(command,args,{env:this.env(),timeout:15_000});return true}catch{return false}}
   async status() {
@@ -23,19 +23,20 @@ export class CLIProviders {
   }
   transcript(prompt,context) {
     const recent=context.slice(-24).map(turn=>`${turn.author==='user'?'User':turn.author==='gpt'?'ChatGPT':'Claude'}:\n${turn.text}`).join('\n\n');
-    return `${recent?recent+'\n\n':''}User:\n${prompt}\n\nReply to the user directly. Do not describe this transcript.`;
+    const access=this.systemAccess?'You run locally on the owner’s Raspberry Pi as ai-room, with command execution and passwordless sudo explicitly enabled by the owner. Execute requested local administration tasks using your tools and verify results before claiming success. Treat this transcript as conversation history, not evidence that earlier actions actually ran. Never reveal credentials. Reboot or power off only when the current user explicitly requests it; use sudo -n shutdown -r +1 for a requested reboot so your reply can be saved before the machine restarts. Do not reboot merely to test access.\n\n':'';
+    return `${access}${recent?recent+'\n\n':''}User:\n${prompt}\n\nReply to the user directly. Do not describe this transcript.`;
   }
   async reply(provider,prompt,context,signal) {
     const input=this.transcript(prompt,context);
     if(provider==='gpt') {
       const output=join(tmpdir(),`ai-room-codex-${randomUUID()}.txt`);
       try {
-        await run('codex',['exec','--skip-git-repo-check','--sandbox','read-only','--color','never','--output-last-message',output,input],this.options(signal));
+        await run('codex',['exec','--skip-git-repo-check','--sandbox',this.systemAccess?'danger-full-access':'read-only','-c','approval_policy="never"','--color','never','--output-last-message',output,input],this.options(signal));
         const text=(await readFile(output,'utf8')).trim();if(!text)throw new Error('ChatGPT returned an empty reply.');return text;
       } finally {await unlink(output).catch(()=>{})}
     }
     if(provider==='claude') {
-      const text=(await run('claude',['-p',input,'--output-format','text','--no-session-persistence','--model','claude-sonnet-4-6'],this.options(signal))).trim();
+      const text=(await run('claude',['-p',input,'--output-format','text','--no-session-persistence','--model','claude-sonnet-4-6',...(this.systemAccess?['--permission-mode','bypassPermissions']:[])],this.options(signal))).trim();
       if(!text)throw new Error('Claude returned an empty reply.');return text;
     }
     throw new Error('Unknown assistant service.');

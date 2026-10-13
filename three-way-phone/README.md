@@ -63,9 +63,15 @@ Existing conversations from the iPhone do not automatically move to the Pi. Expo
 
 ## Assistant behavior
 
-The host executes provider CLIs directly without a shell. Prompts are passed as process arguments, output is capped, each request has a 170-second process deadline, and browser stop requests abort the active child process. ChatGPT uses `codex exec` with a read-only sandbox and an isolated working directory. Claude uses print mode without session persistence. AI Room supplies recent room context and saves final replies itself.
+The host executes provider CLIs directly without a shell. Prompts are passed as process arguments, output is capped, each request has a 170-second process deadline, and browser stop requests abort the active child process. ChatGPT uses `codex exec`, with a read-only sandbox by default or full local access when the owner enables system administration. Claude uses print mode without session persistence. AI Room supplies recent room context and saves final replies itself.
 
 The browser supports ChatGPT, Claude, both services, and one to three discussion rounds. Clicking a disconnected provider’s setup button returns the exact Pi login command.
+
+## Optional local system administration
+
+An owner can explicitly enable command execution and passwordless sudo for both assistants by running `sudo sh three-way-phone/pi-host/enable-system-access.sh` from the repository root. This installs a sudoers rule for the shared `ai-room` account and a systemd override that grants system write access. Codex uses full local access and Claude uses its noninteractive permission bypass. Any authenticated AI Room user can then ask either assistant to administer the Pi. Reboots must be explicitly requested and are scheduled one minute ahead so the chat response can be saved first.
+
+The default installation keeps its restricted service permissions until this optional script is run.
 
 ## Cloudflare relay
 
