@@ -1,0 +1,109 @@
+#!/bin/bash
+# Run from a verified USB clone, never from the SD card being resized.
+# Machine identifiers and the original partition table are private local inputs.
+set -euo pipefail
+umask 077
+state=/var/lib/pi-storage-migration
+[[ $EUID == 0 && -f $state/backup-verified && -f $state/machine.conf ]] || exit 1
+source "$state/machine.conf"
+exec > >(tee -a "$state/migration.log") 2>&1
+trap 'echo "Migration stopped at line $LINENO. USB recovery root is retained; do not remove it."' ERR
+[[ $(findmnt -n -o SOURCE /) == /dev/sda2 ]]
+[[ $(blkid -s PARTUUID -o value /dev/sda2) == "$USB_ROOT_PARTUUID" ]]
+[[ $(cat /sys/block/mmcblk0/device/cid) == "$SD_CID" ]]
+[[ $(udevadm info --query=property --name=/dev/sda | sed -n 's/^ID_SERIAL=//p') == "$USB_SERIAL" ]]
+[[ $(findmnt -n -o SOURCE /boot/firmware) == /dev/mmcblk0p1 ]]
+[[ $(blkid -s UUID -o value /dev/mmcblk0p2) == "$SD_ROOT_UUID" ]]
+! findmnt -rn -S /dev/mmcblk0p2
+! findmnt -rn -S /dev/mmcblk0p3
+[[ ! -e /dev/mmcblk0p3 ]]
+sfdisk -d /dev/mmcblk0 | cmp - "$state/sd-partitions-before.sfdisk"
+[[ $(df --output=avail -B1 / | tail -1) -gt 17179869184 ]]
+# Neither SD partition may be mounted while its table changes.
+umount /boot/firmware
+
+check_fs() {
+  local rc=0
+  e2fsck -f -p /dev/mmcblk0p2 || rc=$?
+  [[ $rc == 0 || $rc == 1 ]]
+}
+
+echo 'Checking the unmounted SD root before shrinking.'
+check_fs
+resize2fs -z "$state/sd-resize.e2undo" /dev/mmcblk0p2 32G
+check_fs
+# SD root starts at sector 1064960; 32 GiB = 67108864 sectors.
+[[ $(cat /sys/class/block/mmcblk0p2/start) == 1064960 ]]
+[[ $(blockdev --getss /dev/mmcblk0) == 512 ]]
+printf 'size=67108864\n' | sfdisk --wipe never --wipe-partitions never -N 2 /dev/mmcblk0
+printf 'start=68173824,type=83\n' | sfdisk --wipe never --wipe-partitions never --append /dev/mmcblk0
+partprobe /dev/mmcblk0
+udevadm settle
+[[ $(blockdev --getsz /dev/mmcblk0p2) == 67108864 ]]
+[[ $(cat /sys/class/block/mmcblk0p3/start) == 68173824 ]]
+[[ $(blkid -s PARTUUID -o value /dev/mmcblk0p3) == dc407c03-03 ]]
+mkfs.ext4 -q -m 1 -L car-data /dev/mmcblk0p3
+
+target=/mnt/pi-sd-root
+install -d -m 0700 "$target"
+mount /dev/mmcblk0p2 "$target"
+install -d -m 0755 "$target/srv/pi-data"
+mount /dev/mmcblk0p3 "$target/srv/pi-data"
+data=$target/srv/pi-data
+for path in home opt var/lib/ai-room var/lib/video-pilot var/lib/NetworkManager etc/NetworkManager/system-connections etc/ai-room; do
+  install -d "$data/$(dirname "$path")"
+  rsync -aHAX --numeric-ids "$target/$path" "$data/$(dirname "$path")/"
+  # Check contents and ownership before using the copied state at boot.
+  [[ -z $(rsync -aHAXnc --numeric-ids --out-format='%i %n' "$target/$path" "$data/$(dirname "$path")/") ]]
+done
+install -d "$data/etc"
+cp -a "$target/etc/video-pilot.env" "$data/etc/video-pilot.env"
+cmp "$target/etc/video-pilot.env" "$data/etc/video-pilot.env"
+cp -a "$state" "$data/migration-records"
+install -m 0755 /usr/local/sbin/pi-storage "$target/usr/local/sbin/pi-storage"
+
+cat > "$target/etc/fstab" <<'FSTAB'
+proc /proc proc defaults 0 0
+PARTUUID=dc407c03-01 /boot/firmware vfat defaults,ro 0 2
+PARTUUID=dc407c03-02 / ext4 defaults,noatime 0 1
+PARTUUID=dc407c03-03 /srv/pi-data ext4 defaults,noatime,errors=remount-ro 0 2
+/srv/pi-data/home /home none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+/srv/pi-data/opt /opt none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+/srv/pi-data/var/lib/ai-room /var/lib/ai-room none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+/srv/pi-data/var/lib/video-pilot /var/lib/video-pilot none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+/srv/pi-data/var/lib/NetworkManager /var/lib/NetworkManager none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+/srv/pi-data/etc/NetworkManager/system-connections /etc/NetworkManager/system-connections none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+/srv/pi-data/etc/ai-room /etc/ai-room none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+/srv/pi-data/etc/video-pilot.env /etc/video-pilot.env none bind,x-systemd.requires-mounts-for=/srv/pi-data 0 0
+FSTAB
+install -d "$target/etc/rpi/swap.conf.d" "$target/etc/systemd/journald.conf.d"
+printf '[Main]\nMechanism=zram\n' > "$target/etc/rpi/swap.conf.d/90-protected-os.conf"
+printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=64M\n' > "$target/etc/systemd/journald.conf.d/90-protected-os.conf"
+for service in ai-room video-pilot; do
+  install -d "$target/etc/systemd/system/$service.service.d"
+  printf '[Unit]\nRequiresMountsFor=/srv/pi-data /opt /var/lib/%s\n' "$service" > "$target/etc/systemd/system/$service.service.d/storage.conf"
+done
+systemctl --root="$target" disable apt-daily.timer apt-daily-upgrade.timer
+# The SD filesystem is offline here; this generated swap file is not active.
+if [[ -f $target/var/swap ]]; then rm -- "$target/var/swap"; fi
+# Resolve devices and absolute bind sources inside the target. Keep these
+# temporary mounts in a private namespace so even a failed check cleans them up.
+unshare --mount --fork bash -euo pipefail -c '
+  mount --make-rprivate /
+  mount --bind /dev "$1/dev"
+  mount -t proc proc "$1/proc"
+  chroot "$1" findmnt --verify --tab-file /etc/fstab
+' bash "$target"
+touch "$data/migration-complete"
+sync
+umount "$data"
+umount "$target"
+
+# Keep the original SD root ID. Overlay only '/', leaving data mounts writable.
+mount /dev/mmcblk0p1 /boot/firmware
+cp -a /boot/firmware/cmdline.txt "$state/usb-recovery-cmdline.txt"
+sed -E 's/(^| )overlayroot=[^ ]+ */\1/g; s/^ +//' "$state/cmdline.txt" > /boot/firmware/cmdline.txt
+sed -i 's/^/overlayroot=tmpfs:recurse=0 /' /boot/firmware/cmdline.txt
+sync
+echo 'Migration complete. Rebooting into the protected SD installation.'
+systemctl reboot

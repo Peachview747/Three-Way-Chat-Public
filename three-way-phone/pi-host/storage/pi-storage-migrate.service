@@ -1,0 +1,13 @@
+[Unit]
+Description=Move car Pi to protected OS and persistent SD data
+After=local-fs.target
+Before=display-manager.service ai-room.service video-pilot.service
+ConditionKernelCommandLine=pi.storage=rescue
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pi-storage-migrate
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target
