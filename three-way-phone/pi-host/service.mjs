@@ -15,9 +15,9 @@ let attempt=0,stopping=false;
 function connect(){
   const url=new URL('api/phone',config.server);url.protocol='wss:';
   const ws=new WebSocket(url,{headers:{Authorization:`Bearer ${config.phoneKey}`},maxPayload:1_000_000,handshakeTimeout:15_000});
-  let heartbeat;
-  ws.on('open',()=>{attempt=0;console.log('Connected to AI Room Worker.');heartbeat=setInterval(()=>{if(ws.readyState===WebSocket.OPEN)ws.send('ping')},20_000)});
-  ws.on('message',raw=>{const text=raw.toString();if(text==='pong')return;let body;try{body=JSON.parse(text)}catch{return ws.close(1008,'Invalid relay message')}
+  let heartbeat,lastPong=0;
+  ws.on('open',()=>{attempt=0;lastPong=Date.now();console.log('Connected to AI Room Worker.');heartbeat=setInterval(()=>{if(Date.now()-lastPong>45_000){console.error('AI Room heartbeat timed out. Reconnecting…');return ws.terminate()}if(ws.readyState===WebSocket.OPEN)ws.send('ping')},20_000)});
+  ws.on('message',raw=>{const text=raw.toString();if(text==='pong'){lastPong=Date.now();return}let body;try{body=JSON.parse(text)}catch{return ws.close(1008,'Invalid relay message')}
     if(body.type==='hello'&&body.protocol===PROTOCOL)return ws.send(JSON.stringify({type:'ready',protocol:PROTOCOL}));
     if(body.type==='connected')return;
     if(body.type==='replaced'){console.error('Another host replaced this Pi.');return ws.close(4001,'Replaced')}

@@ -42,7 +42,7 @@ systemctl status ai-room
 journalctl -u ai-room -f
 ```
 
-The service starts at boot and reconnects with bounded exponential backoff. All connections are outbound, so the router needs no port forwarding.
+The service starts at boot after NetworkManager, without waiting for internet, and reconnects indefinitely with a maximum 30-second retry delay. It detects a lost heartbeat and replaces an unresponsive connection when a hotspot drops. When installed alongside Video Pilot, the shared `pi-hotspot-watch.timer` searches for the saved `car-hotspot` Wi-Fi connection while disconnected. All connections are outbound, so the router needs no port forwarding.
 
 ## Private GitHub backup
 
