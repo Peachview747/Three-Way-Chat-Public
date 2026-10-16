@@ -18,7 +18,16 @@ export const VOICES = {
   'en_US-kristin-medium':{label:'Kristin (US, female)'},
   'en_GB-jenny_dioco-medium':{label:'Jenny (UK, female)'},
 };
-export const DEFAULT_VOICE = 'en_US-ryan-medium';
+// Kokoro voices (kokoro_speak.py) sound far more natural than Piper; they are the default.
+const KOKORO_VOICES = {
+  'af_heart':{label:'Heart (Kokoro, US female)'},
+  'af_bella':{label:'Bella (Kokoro, US female)'},
+  'am_michael':{label:'Michael (Kokoro, US male)'},
+  'bm_george':{label:'George (Kokoro, UK male)'},
+  'bf_emma':{label:'Emma (Kokoro, UK female)'},
+};
+for(const [id,v] of Object.entries(KOKORO_VOICES))VOICES['kokoro-'+id]=v;
+export const DEFAULT_VOICE = 'kokoro-af_heart';
 const MAX_AUDIO = 3_000_000, MAX_SPEECH = 4000;
 
 export class Voice {
@@ -26,7 +35,7 @@ export class Voice {
     this.root=root;this.port=port;this.run=run;this.fetch=fetcher;this.logger=logger;this.server=null;this.stopped=false;
   }
   async available() {
-    try {await Promise.all([access(join(this.root,'whisper.cpp/build/bin/whisper-server')),access(join(this.root,'piper/piper'))]);return true}
+    try {await Promise.all([access(join(this.root,'whisper.cpp/build/bin/whisper-server')),access(join(this.root,'piper/piper')),access(join(this.root,'kokoro/venv/bin/python'))]);return true}
     catch {return false}
   }
   // The recognizer stays loaded; if it exits it is started again.
@@ -76,7 +85,8 @@ export class Voice {
     const dir=await mkdtemp(join(tmpdir(),'ai-room-voice-'));
     try {
       const wav=join(dir,'reply.wav'),mp3=join(dir,'reply.mp3');
-      await this.run(join(this.root,'piper/piper'),['-m',join(this.root,'voices',`${name}.onnx`),'-f',wav,'--sentence_silence','0.18','--noise_scale','0.95','--noise_w','1.1','--length_scale','0.9'],{signal,input:spoken});
+      if(name.startsWith('kokoro-'))await this.run(join(this.root,'kokoro/venv/bin/python'),['-I',join(this.root,'kokoro/kokoro_speak.py'),name.slice(7),wav],{signal,input:spoken});
+      else await this.run(join(this.root,'piper/piper'),['-m',join(this.root,'voices',`${name}.onnx`),'-f',wav,'--sentence_silence','0.18','--noise_scale','0.95','--noise_w','1.1','--length_scale','0.9'],{signal,input:spoken});
       await this.run('ffmpeg',['-loglevel','error','-y','-i',wav,'-ac','1','-b:a','48k',mp3],{signal});
       return (await readFile(mp3)).toString('base64');
     } finally {await rm(dir,{recursive:true,force:true})}
