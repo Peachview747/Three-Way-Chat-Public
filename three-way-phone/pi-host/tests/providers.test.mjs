@@ -22,12 +22,22 @@ printf 'Claude answer'
     assert.equal(await providers.reply('hello; touch /tmp/nope',[],new AbortController().signal),'Claude answer');
     const args=await readFile(join(dir,'claude-args'),'utf8');
     assert.doesNotMatch(args, /bypassPermissions/);assert.match(args,/--model\nsonnet/);assert.doesNotMatch(args,/read aloud/);
-    const admin=new CLIProviders({home:dir,workdir:dir,timeout:5000,systemAccess:true});
+    const admin=new CLIProviders({home:dir,workdir:dir,timeout:5000,systemAccess:true,owner:''});
     await admin.reply('Check sudo.',[],new AbortController().signal,{spoken:true});
     const spoken=await readFile(join(dir,'claude-args'),'utf8');
     assert.match(spoken, /bypassPermissions/);assert.match(spoken,/read aloud/);
     assert.match(admin.transcript('Hello',[{author:'gpt',text:'old'}]), /ChatGPT \(earlier assistant\)/);
     assert.match(admin.transcript('Hello',[]), /Reboot or power off only when the current user explicitly requests it/);
+    const room='11111111-2222-4333-8444-555555555555';
+    await providers.reply('first',[{author:'user',text:'earlier'}],new AbortController().signal,{session:room,resume:false});
+    let sent=await readFile(join(dir,'claude-args'),'utf8');
+    assert.match(sent,new RegExp(`--session-id\n${room}`));assert.match(sent,/earlier/);assert.doesNotMatch(sent,/no-session-persistence/);
+    await providers.reply('second',[{author:'user',text:'earlier'}],new AbortController().signal,{session:room,resume:true});
+    sent=await readFile(join(dir,'claude-args'),'utf8');
+    assert.match(sent,new RegExp(`--resume\n${room}`));assert.doesNotMatch(sent,/earlier/,'a resumed session already has the history');
+    const owner=new CLIProviders({home:dir,workdir:dir,systemAccess:true,owner:'peachview'});
+    assert.deepEqual(owner.ownerArgs(['-p','x']).slice(0,4),['-n','-u','peachview','-H']);
+    assert.equal(new CLIProviders({home:dir,workdir:dir,systemAccess:false,owner:'peachview'}).owner,'','only with system access');
   } finally {process.env.PATH=old}
 });
 

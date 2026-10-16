@@ -44,3 +44,12 @@ test('a voice turn saves what was heard and the spoken reply, and returns audio'
   assert.equal((await store.handle('state',{})).body.rooms[0].title,'what time is it');
   assert.equal((await store.handle('voice',{request_id:randomUUID(),room,audio:'not base64!'})).status,400);
 });
+
+test('each conversation is one Claude Code session, resumed after the first reply',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'ai-room-pi-')),calls=[];
+  const providers=new FakeProviders();providers.reply=async(prompt,context,signal,options)=>{calls.push(options);return 'ok'};
+  const store=new ConversationStore(join(dir,'s.json'),providers);
+  const room=(await store.handle('state',{})).body.rooms[0].id;
+  for(const text of ['one','two'])assert.equal((await store.handle('send',{request_id:randomUUID(),room,text,target:'claude',rounds:1})).status,200);
+  assert.deepEqual(calls,[{session:room,resume:false},{session:room,resume:true}]);
+});

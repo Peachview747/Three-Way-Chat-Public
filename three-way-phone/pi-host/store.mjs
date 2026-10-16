@@ -74,9 +74,9 @@ export class ConversationStore {
       const controller=new AbortController();this.active=controller;
       try {
         const prior=this.history.messages.filter(m=>m.room===body.room&&m.id!==body.request_id).map(({author,text})=>({author,text}));
-        const answer=await this.providers.reply(text,prior,controller.signal);
+        const answer=await this.providers.reply(text,prior,controller.signal,this.session(body.room));
         if(this.active!==controller)throw new StoreError('The reply was stopped.');
-        const next=clone(this.history);next.messages.push(message(`${body.request_id}:claude:0`,body.room,'claude',answer,'complete','claude',1));await this.commit(next);
+        const next=clone(this.history);next.messages.push(message(`${body.request_id}:claude:0`,body.room,'claude',answer,'complete','claude',1));this.sessionStarted(next,body.room);await this.commit(next);
         return reply(200,{ok:true,notice:'Claude’s reply is saved on your Raspberry Pi.'});
       } finally {if(this.active===controller)this.active=null}
     } catch(error) {
@@ -105,14 +105,17 @@ export class ConversationStore {
       next.messages.push({...message(body.request_id,body.room,'user',heard,'complete','claude',1),spoken:true});
       const room=next.rooms.find(r=>r.id===body.room);if(room?.title==='New conversation')room.title=heard.slice(0,45);
       await this.commit(next);
-      const answer=await this.providers.reply(heard,prior,controller.signal,{spoken:true});
+      const answer=await this.providers.reply(heard,prior,controller.signal,{spoken:true,...this.session(body.room)});
       if(this.active!==controller)throw new StoreError('The reply was stopped.');
-      next=clone(this.history);next.messages.push({...message(`${body.request_id}:claude:0`,body.room,'claude',answer,'complete','claude',1),spoken:true});
+      next=clone(this.history);next.messages.push({...message(`${body.request_id}:claude:0`,body.room,'claude',answer,'complete','claude',1),spoken:true});this.sessionStarted(next,body.room);
       await this.commit(next);
       const audio=await this.voice.speak(answer,body.voice,controller.signal);
       return {heard,reply:answer,audio,mime:'audio/mpeg'};
     } finally {if(this.active===controller)this.active=null}
   }
+  // Each conversation is one Claude Code session, named by the room's ID.
+  session(roomId){const room=this.history.rooms.find(r=>r.id===roomId);return{session:isUUID(roomId)?roomId:null,resume:Boolean(room?.claudeSession)}}
+  sessionStarted(next,roomId){const room=next.rooms.find(r=>r.id===roomId);if(room)room.claudeSession=true}
   // Transcription only, for the live text while the user is still talking.
   async hear(body) {
     if(!this.voice)throw new StoreError('Voice is not set up on this Raspberry Pi.');

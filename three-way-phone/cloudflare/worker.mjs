@@ -208,7 +208,8 @@ export class PhoneRoom extends DurableObject {
     // The host receives a named room operation, never an arbitrary URL or command.
     const action = url.pathname.slice('/api/'.length), id = crypto.randomUUID();
     return new Promise(resolve => {
-      const timeout = action === 'send' || action === 'voice' ? 180_000 : action === 'speak' || action === 'hear' ? 30_000 : 15_000;
+      // Claude Code may work for minutes (searching, running commands).
+      const timeout = action === 'send' || action === 'voice' ? 600_000 : action === 'speak' || action === 'hear' ? 30_000 : 15_000;
       const timer = setTimeout(() => this.finish(id,json({error:'The Raspberry Pi host did not answer. Check the ai-room service.'},504)),timeout);
       this.pending.set(id,{resolve,timer,ws});
       try { ws.send(JSON.stringify({type:'request',id,action,body})); }
