@@ -1,45 +1,35 @@
 import {execFile,spawn} from 'node:child_process';
-import {readFile,unlink} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
 
+// Claude Code is the only assistant. Earlier conversations may still contain
+// ChatGPT turns; they stay in the history and are labelled as such.
+const SPOKEN='The user is talking to you out loud, often while driving, and your reply will be read aloud by a text-to-speech voice. '+
+  'Answer like a person in conversation: usually one to three short sentences, warm and direct. No markdown, headings, bullet lists, tables, code blocks, links or emoji. '+
+  'Spell out what a listener needs (say "about five minutes", not "~5 min"). If the user asks you to do something on the Pi, do it with your tools, then say in a sentence what happened. '+
+  'If an answer truly needs detail, give the short version and offer to put the rest in the chat.\n\n';
+
 export class CLIProviders {
-  constructor({home,workdir,timeout=170_000,systemAccess=process.env.AI_ROOM_SYSTEM_ACCESS==='1'}={}){this.home=home;this.workdir=workdir;this.timeout=timeout;this.systemAccess=systemAccess;this.cached=null;this.cachedAt=0}
+  constructor({home,workdir,timeout=170_000,systemAccess=process.env.AI_ROOM_SYSTEM_ACCESS==='1',model=process.env.AI_ROOM_MODEL||'sonnet'}={}){this.home=home;this.workdir=workdir;this.timeout=timeout;this.systemAccess=systemAccess;this.model=model;this.cached=null;this.cachedAt=0}
   env(){return {...process.env,HOME:this.home,NO_COLOR:'1',TERM:'dumb'}}
   async commandStatus(command,args) {try{await exec(command,args,{env:this.env(),timeout:15_000});return true}catch{return false}}
   async status() {
     if(this.cached&&Date.now()-this.cachedAt<30_000)return this.cached;
-    const [gpt,claude]=await Promise.all([this.commandStatus('codex',['login','status']),this.commandStatus('claude',['auth','status'])]);
-    return this.cached={gpt:{ready:gpt,label:gpt?'Connected on Raspberry Pi':'Run ai-room-login gpt on the Pi'},
-      claude:{ready:claude,label:claude?'Connected on Raspberry Pi':'Run ai-room-login claude on the Pi'}};
+    const claude=await this.commandStatus('claude',['auth','status']);
+    this.cachedAt=Date.now();
+    return this.cached={claude:{ready:claude,label:claude?'Connected on Raspberry Pi':'Run ai-room-login claude on the Pi'}};
   }
-  loginInstructions(provider) {
-    if(provider==='gpt')return 'On the Raspberry Pi, run: sudo ai-room-login gpt';
-    if(provider==='claude')return 'On the Raspberry Pi, run: sudo ai-room-login claude';
-    return 'Choose ChatGPT or Claude.';
-  }
-  transcript(prompt,context) {
-    const recent=context.slice(-24).map(turn=>`${turn.author==='user'?'User':turn.author==='gpt'?'ChatGPT':'Claude'}:\n${turn.text}`).join('\n\n');
+  loginInstructions(){return 'On the Raspberry Pi, run: sudo ai-room-login claude'}
+  transcript(prompt,context,{spoken=false}={}) {
+    const recent=context.slice(-24).map(turn=>`${turn.author==='user'?'User':turn.author==='gpt'?'ChatGPT (earlier assistant)':'Claude'}:\n${turn.text}`).join('\n\n');
     const access=this.systemAccess?'You run locally on the owner’s Raspberry Pi as ai-room, with command execution and passwordless sudo explicitly enabled by the owner. Execute requested local administration tasks using your tools and verify results before claiming success. Treat this transcript as conversation history, not evidence that earlier actions actually ran. Never reveal credentials. If pi-storage is installed, check pi-storage status before changing OS files: in protected mode only /home, /opt, app state and selected app/network configuration persist; other writes disappear on reboot. OS packages and service definitions require maintenance mode and a reboot; never claim a temporary overlay edit is permanently installed. Reboot or power off only when the current user explicitly requests it; use sudo -n shutdown -r +1 for a requested reboot so your reply can be saved before the machine restarts. Do not reboot merely to test access.\n\n':'';
-    return `${access}${recent?recent+'\n\n':''}User:\n${prompt}\n\nReply to the user directly. Do not describe this transcript.`;
+    return `${access}${spoken?SPOKEN:''}${recent?recent+'\n\n':''}User:\n${prompt}\n\nReply to the user directly. Do not describe this transcript.`;
   }
-  async reply(provider,prompt,context,signal) {
-    const input=this.transcript(prompt,context);
-    if(provider==='gpt') {
-      const output=join(tmpdir(),`ai-room-codex-${randomUUID()}.txt`);
-      try {
-        await run('codex',['exec','--skip-git-repo-check','--sandbox',this.systemAccess?'danger-full-access':'read-only','-c','approval_policy="never"','--color','never','--output-last-message',output,input],this.options(signal));
-        const text=(await readFile(output,'utf8')).trim();if(!text)throw new Error('ChatGPT returned an empty reply.');return text;
-      } finally {await unlink(output).catch(()=>{})}
-    }
-    if(provider==='claude') {
-      const text=(await run('claude',['-p',input,'--output-format','text','--no-session-persistence','--model','claude-sonnet-4-6',...(this.systemAccess?['--permission-mode','bypassPermissions']:[])],this.options(signal))).trim();
-      if(!text)throw new Error('Claude returned an empty reply.');return text;
-    }
-    throw new Error('Unknown assistant service.');
+  async reply(prompt,context,signal,{spoken=false}={}) {
+    const input=this.transcript(prompt,context,{spoken});
+    const text=(await run('claude',['-p',input,'--output-format','text','--no-session-persistence','--model',this.model,...(this.systemAccess?['--permission-mode','bypassPermissions']:[])],this.options(signal))).trim();
+    if(!text)throw new Error('Claude returned an empty reply.');
+    return text;
   }
   options(signal){return{env:this.env(),cwd:this.workdir,signal,timeout:this.timeout,maxBytes:2_000_000}}
 }

@@ -1,5 +1,5 @@
 'use strict';
-let pendingSend = null, room = localStorage.getItem('threeway-room') || '', target = 'both', current = null, lastMessages = '', lastRooms = '', fetching = false;
+let pendingSend = null, room = localStorage.getItem('threeway-room') || '', current = null, lastMessages = '', lastRooms = '', fetching = false;
 const $ = id => document.getElementById(id);
 const notice = text => { $('notice').textContent = text; };
 const native = !!window.webkit?.messageHandlers?.threeway;
@@ -16,7 +16,7 @@ window.threeWayReceive = encoded => {
 async function api(action, body = {}) {
   if (native) return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
-    const timer = setTimeout(() => { waiting.delete(id); reject(new Error('The host did not respond.')); }, 15000);
+    const timer = setTimeout(() => { waiting.delete(id); reject(new Error('The host did not respond.')); }, action === 'voice' ? 180000 : 15000);
     waiting.set(id, {resolve, reject, timer});
     window.webkit.messageHandlers.threeway.postMessage({id, action, body});
   });
@@ -33,7 +33,7 @@ async function api(action, body = {}) {
   return result;
 }
 const post = api;
-function label(author) { return {user:'You',gpt:'GPT',claude:'Claude',system:'Room notice'}[author] || author; }
+function label(author) { return {user:'You',gpt:'ChatGPT',claude:'Claude',system:'Room notice'}[author] || author; }
 function render(state) {
   current = state;
   if (!state.rooms.some(r => r.id === room)) { room = state.rooms[0]?.id || ''; localStorage.setItem('threeway-room',room); lastMessages = ''; }
@@ -45,14 +45,13 @@ function render(state) {
       button.onclick = () => { room = r.id; localStorage.setItem('threeway-room',room); lastMessages = ''; refresh(); };
       $('rooms').append(button);
     }
-    $('room-title').textContent = state.rooms.find(r => r.id === room)?.title || 'Your shared room'; lastRooms = roomsKey;
+    $('room-title').textContent = state.rooms.find(r => r.id === room)?.title || 'Your conversation'; lastRooms = roomsKey;
   }
-  for (const p of ['gpt','claude']) {
-    $(p+'-status').textContent = state.connections[p].label;
-    document.querySelector('[data-provider="'+p+'"]').classList.toggle('ready',state.connections[p].ready);
-    $(p+'-login').hidden = state.connections[p].ready;
-    $(p+'-login').disabled = state.busy || state.login_busy;
-  }
+  const claude = state.connections.claude || {ready:false, label:'Not connected'};
+  $('claude-status').textContent = claude.label;
+  document.querySelector('[data-provider="claude"]').classList.toggle('ready', claude.ready);
+  $('claude-login').hidden = claude.ready;
+  renderVoices(state.voice);
   const messagesKey = JSON.stringify(state.messages);
   if (messagesKey !== lastMessages) {
     const nearBottom = $('chat').scrollHeight - $('chat').scrollTop - $('chat').clientHeight < 130;
@@ -65,6 +64,7 @@ function render(state) {
       const heading = document.createElement('div'); heading.className = 'message-heading';
       const name = document.createElement('span'); name.textContent = label(m.author); heading.append(name);
       const time = document.createElement('time'); time.textContent = new Date(m.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); heading.append(time);
+      if (m.spoken) { const spoken = document.createElement('span'); spoken.className = 'status spoken'; spoken.textContent = 'Spoken'; heading.append(spoken); }
       if (m.status !== 'complete') { const status = document.createElement('span'); status.className = 'status '+m.status; status.textContent = {working:'Replying',interrupted:'Stopped',error:'Incomplete',saved:'Saved on Pi'}[m.status] || m.status; heading.append(status); }
       const text = document.createElement('div'); text.className = 'message-text'; text.textContent = m.text || (m.status === 'working' ? 'Thinking…' : 'No reply saved.');
       content.append(heading,text); article.append(avatar,content); $('messages').append(article);
@@ -73,9 +73,10 @@ function render(state) {
     lastMessages = messagesKey;
   }
   $('send').disabled = state.busy || state.login_busy;
-  $('stop').hidden = !state.busy;
+  $('stop').hidden = !state.busy || voice.active;
   $('input').disabled = state.busy;
   $('new').disabled = state.busy;
+  for (const id of ['talk','talk-header','talk-welcome']) $(id).hidden = !state.voice?.available;
 }
 async function refresh() {
   if (fetching) return;
@@ -92,26 +93,19 @@ $('composer').onsubmit = async event => {
   const text = $('input').value.trim(); if (!text) return;
   $('send').disabled = true;
   try {
-    const signature = JSON.stringify({text,target,room,rounds:Number($('rounds').value)});
+    const signature = JSON.stringify({text,room});
     if (pendingSend?.signature !== signature) pendingSend = {signature,id:crypto.randomUUID()};
-    const result = await post('send',{text,target,room,rounds:Number($('rounds').value),request_id:pendingSend.id});
+    const result = await post('send',{text,target:'claude',room,rounds:1,request_id:pendingSend.id});
     pendingSend = null; $('input').value = ''; notice(result.notice || 'Saved on your Raspberry Pi.'); await refresh();
   }
   catch(e) { notice(e.message); $('send').disabled = !!current?.busy; }
 };
 $('input').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!$('send').disabled) $('composer').requestSubmit(); } };
-for (const button of document.querySelectorAll('[data-target]')) button.onclick = () => {
-  target = button.dataset.target;
-  for (const b of document.querySelectorAll('[data-target]')) b.classList.toggle('selected',b === button);
-  $('rounds-label').hidden = target !== 'discuss';
-  $('send-hint').textContent = {both:'Ask ChatGPT and Claude.',gpt:'Ask ChatGPT.',claude:'Ask Claude.',discuss:'Let ChatGPT and Claude discuss this for the selected rounds.'}[target];
-};
-for (const button of document.querySelectorAll('[data-prompt]')) button.onclick = () => { $('input').value = button.dataset.prompt; $('input').focus(); };
-$('stop').onclick = async () => { try { await post('stop'); notice('Stopping the current reply and remaining turns…'); await refresh(); } catch(e) { notice(e.message); } };
+$('stop').onclick = async () => { try { await post('stop'); notice('Stopping Claude’s reply…'); await refresh(); } catch(e) { notice(e.message); } };
 $('new').onclick = async () => { try { room = (await post('new',{request_id:crypto.randomUUID()})).room; localStorage.setItem('threeway-room',room); lastMessages=''; notice(''); await refresh(); } catch(e) { notice(e.message); } };
 $('refresh').onclick = async () => { try { await refresh(); notice('Raspberry Pi host refreshed.'); } catch(e) { notice(e.message); } };
-for (const provider of ['gpt','claude']) $(provider+'-login').onclick = async () => {
-  try { const result = await post('login',{provider}); notice(result.notice); await refresh(); }
+$('claude-login').onclick = async () => {
+  try { const result = await post('login',{provider:'claude'}); notice(result.notice); await refresh(); }
   catch(e) { notice(e.message); }
 };
 $('connections-button').onclick = () => {
@@ -129,8 +123,184 @@ async function pair(pin) {
   pairingPrompted = false; $('pairing').close(); notice('Connecting to Raspberry Pi…'); await refresh();
 }
 $('pairing-form').onsubmit = async event => { event.preventDefault(); try { await pair($('pair-pin').value.trim()); $('pair-pin').value = ''; $('pairing-error').textContent = ''; } catch(e) { $('pairing-error').textContent = e.message; } };
+
+// ---- Voice ----
+// Hands-free: no button to hold and no text box. The page listens, notices when
+// you stop talking, sends that turn to the Pi (speech recognition, Claude and
+// the voice all run there), plays the answer and listens again. The microphone
+// is ignored while Claude speaks so the car speakers do not answer themselves.
+const VOICE_KEY = 'airoom-voice';
+const SAMPLE_RATE = 16000;
+const voice = {active:false, state:'idle', stream:null, context:null, source:null, processor:null, chunks:[], preroll:[],
+  speaking:false, speechMs:0, silenceMs:0, floor:0.004, muted:false, player:null, turn:null};
+// Tuned for a car cabin: speech must rise clearly above the running noise
+// floor, and a pause of about a second ends the turn.
+const VAD = {frameMs:0, startMs:180, endMs:1100, minSpeechMs:350, maxMs:60000, prerollMs:350, ratio:3.2, minLevel:0.012};
+function voiceChoice() { return localStorage.getItem(VOICE_KEY) || current?.voice?.default || ''; }
+let lastVoices = '';
+function renderVoices(info) {
+  const key = JSON.stringify(info?.voices || []);
+  if (key === lastVoices) return;
+  lastVoices = key;
+  $('voice-choice').replaceChildren(...(info?.voices || []).map(item => { const option = document.createElement('option'); option.value = item.id; option.textContent = item.label; return option; }));
+  $('voice-choice').value = voiceChoice();
+  $('voice-choice').closest('.connection').hidden = !info?.available;
+}
+$('voice-choice').onchange = () => localStorage.setItem(VOICE_KEY, $('voice-choice').value);
+$('voice-preview').onclick = async () => {
+  $('voice-preview').disabled = true;
+  try { const result = await api('speak',{voice:$('voice-choice').value}); await playAudio(result.audio, result.mime); }
+  catch (e) { notice(e.message); }
+  finally { $('voice-preview').disabled = false; }
+};
+function audioPlayer() { if (!voice.player) voice.player = new Audio(); return voice.player; }
+function playAudio(base64, mime = 'audio/mpeg') {
+  return new Promise(resolve => {
+    if (!base64) { resolve(); return; }
+    const player = audioPlayer();
+    player.onended = player.onerror = () => resolve();
+    player.src = `data:${mime};base64,${base64}`;
+    player.play().catch(() => resolve());
+  });
+}
+function setVoiceState(state, text) {
+  voice.state = state;
+  $('voice').dataset.state = state;
+  $('voice-state').textContent = text;
+}
+async function startVoice() {
+  if (voice.active) return;
+  if (!navigator.mediaDevices?.getUserMedia) { notice('This browser does not let pages use the microphone.'); return; }
+  $('voice').hidden = false; $('voice-heard').textContent = ''; $('voice-reply').textContent = '';
+  setVoiceState('starting','Starting the microphone…');
+  // Play something silent inside the tap so later replies are allowed to play.
+  audioPlayer().src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='; audioPlayer().play().catch(() => {});
+  try {
+    voice.stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1}});
+  } catch (e) {
+    setVoiceState('error', e.name === 'NotAllowedError' ? 'Microphone access was blocked. Allow it for this site, then try again.' : 'No microphone is available here.');
+    return;
+  }
+  const Context = window.AudioContext || window.webkitAudioContext;
+  voice.context = new Context();
+  await voice.context.resume().catch(() => {});
+  voice.source = voice.context.createMediaStreamSource(voice.stream);
+  voice.processor = voice.context.createScriptProcessor(2048, 1, 1);
+  voice.processor.onaudioprocess = event => hear(event.inputBuffer.getChannelData(0));
+  voice.source.connect(voice.processor); voice.processor.connect(voice.context.destination);
+  VAD.frameMs = 2048 / voice.context.sampleRate * 1000;
+  voice.active = true; voice.muted = false; $('voice-mute').textContent = 'Pause listening';
+  try { voice.wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
+  listen();
+}
+function listen() {
+  if (!voice.active) return;
+  voice.chunks = []; voice.speaking = false; voice.speechMs = 0; voice.silenceMs = 0;
+  setVoiceState(voice.muted ? 'paused' : 'listening', voice.muted ? 'Paused. Tap Resume when you want to talk.' : 'Listening…');
+}
+// Every ~45 ms of microphone audio: track the noise floor, find the start and
+// end of speech, and keep the samples of the turn (plus a little before it).
+function hear(samples) {
+  if (!voice.active) return;
+  let sum = 0; for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+  const level = Math.sqrt(sum / samples.length);
+  $('voice-ring').style.setProperty('--level', String(Math.min(1, level * 12)));
+  if (voice.state !== 'listening') return;
+  const copy = new Float32Array(samples);
+  const loud = level > Math.max(VAD.minLevel, voice.floor * VAD.ratio);
+  if (!voice.speaking) {
+    voice.preroll.push(copy);
+    while (voice.preroll.length * VAD.frameMs > VAD.prerollMs + VAD.startMs) voice.preroll.shift();
+    if (loud) voice.speechMs += VAD.frameMs;
+    else { voice.speechMs = 0; voice.floor = voice.floor * 0.95 + level * 0.05; }
+    if (voice.speechMs >= VAD.startMs) {
+      voice.speaking = true; voice.chunks = voice.preroll; voice.preroll = []; voice.silenceMs = 0;
+      setVoiceState('hearing','Listening…');
+      voice.state = 'listening'; $('voice').dataset.state = 'hearing';
+    }
+    return;
+  }
+  voice.chunks.push(copy);
+  voice.speechMs += VAD.frameMs;
+  voice.silenceMs = loud ? 0 : voice.silenceMs + VAD.frameMs;
+  if (voice.silenceMs >= VAD.endMs || voice.chunks.length * VAD.frameMs >= VAD.maxMs) {
+    const chunks = voice.chunks; voice.chunks = []; voice.speaking = false;
+    if (voice.speechMs - voice.silenceMs < VAD.minSpeechMs) { listen(); return; }
+    void sendTurn(chunks);
+  }
+}
+async function sendTurn(chunks) {
+  setVoiceState('thinking','Thinking…');
+  const turn = voice.turn = crypto.randomUUID();
+  try {
+    const audio = encodeWav(chunks, voice.context.sampleRate);
+    const result = await api('voice',{request_id:turn, room, audio, voice:voiceChoice()});
+    if (voice.turn !== turn || !voice.active) return;
+    if (!result.heard) { listen(); return; }
+    $('voice-heard').textContent = result.heard;
+    $('voice-reply').textContent = result.reply;
+    void refresh();
+    setVoiceState('speaking','Claude is speaking. Tap to interrupt.');
+    await playAudio(result.audio, result.mime);
+  } catch (e) {
+    if (voice.turn !== turn || !voice.active) return;
+    setVoiceState('error', e.message || 'That did not go through.');
+    await new Promise(resolve => setTimeout(resolve, 2500));
+  }
+  if (voice.turn === turn) listen();
+}
+// Mono 16 kHz 16-bit WAV, base64: small enough to send, and every browser can make it.
+function encodeWav(chunks, rate) {
+  let total = 0; for (const chunk of chunks) total += chunk.length;
+  const step = rate / SAMPLE_RATE, length = Math.floor(total / step);
+  const view = new DataView(new ArrayBuffer(44 + length * 2));
+  const text = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
+  text(0,'RIFF'); view.setUint32(4, 36 + length * 2, true); text(8,'WAVE'); text(12,'fmt ');
+  view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true); view.setUint32(24,SAMPLE_RATE,true);
+  view.setUint32(28,SAMPLE_RATE*2,true); view.setUint16(32,2,true); view.setUint16(34,16,true); text(36,'data'); view.setUint32(40,length*2,true);
+  let chunkIndex = 0, offset = 0, position = 0;
+  for (let i = 0; i < length; i++) {
+    // Average the source samples that fall into this output sample.
+    const end = (i + 1) * step; let sum = 0, count = 0;
+    while (position < end && chunkIndex < chunks.length) {
+      sum += chunks[chunkIndex][offset]; count++; position++;
+      if (++offset >= chunks[chunkIndex].length) { chunkIndex++; offset = 0; }
+    }
+    const sample = Math.max(-1, Math.min(1, count ? sum / count : 0));
+    view.setInt16(44 + i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  const bytes = new Uint8Array(view.buffer); let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+function stopVoice() {
+  voice.active = false; voice.turn = null;
+  try { voice.player?.pause(); } catch {}
+  try { voice.processor?.disconnect(); voice.source?.disconnect(); } catch {}
+  for (const track of voice.stream?.getTracks() || []) track.stop();
+  voice.context?.close().catch(() => {});
+  voice.wakeLock?.release?.().catch?.(() => {});
+  Object.assign(voice, {stream:null, context:null, source:null, processor:null, chunks:[], preroll:[], wakeLock:null});
+  $('voice').hidden = true; setVoiceState('idle','');
+  if (current?.busy) post('stop').catch(() => {});
+  void refresh();
+}
+$('voice-end').onclick = stopVoice;
+// Tap the orb: interrupt Claude, or stop waiting for a reply, and listen again.
+$('voice-orb').onclick = () => {
+  if (voice.state === 'speaking') { try { voice.player.pause(); voice.player.onended?.(); } catch {} return; }
+  if (voice.state === 'thinking') { voice.turn = null; post('stop').catch(() => {}); listen(); return; }
+  if (voice.state === 'error') listen();
+};
+$('voice-mute').onclick = () => {
+  voice.muted = !voice.muted;
+  $('voice-mute').textContent = voice.muted ? 'Resume listening' : 'Pause listening';
+  if (voice.state === 'listening' || voice.state === 'paused' || $('voice').dataset.state === 'hearing') listen();
+};
+for (const id of ['talk','talk-header','talk-welcome']) $(id).onclick = () => void startVoice();
+
 async function start() {
   if (!native && location.hash) history.replaceState(null,'',location.pathname);
   await refresh();
 }
-start(); setInterval(() => { if (!document.hidden && !$('pairing').open) refresh(); },3000);
+start(); setInterval(() => { if (!document.hidden && !$('pairing').open && !voice.active) refresh(); },3000);

@@ -5,8 +5,8 @@ const PROTOCOL = 'three-way-host/1';
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const security = {
   'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob: data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
   status, headers: { ...security, 'Content-Type': 'application/json; charset=utf-8', ...extra },
@@ -116,7 +116,7 @@ export default {
       if (!Array.isArray(history.rooms) || !Array.isArray(history.messages)) return json({error:'Invalid conversation backup.'},400);
       return backupToGitHub(history,env);
     }
-    const routes = {phone:'GET',state:'GET',export:'GET',send:'POST',new:'POST',refresh:'POST',login:'POST',stop:'POST'};
+    const routes = {phone:'GET',state:'GET',export:'GET',send:'POST',new:'POST',refresh:'POST',login:'POST',stop:'POST',voice:'POST',speak:'POST'};
     const action = url.pathname.slice('/api/'.length);
     if (!url.pathname.startsWith('/api/') || !Object.hasOwn(routes, action)) return json({error:'Not found.'},404);
     const phone = action === 'phone';
@@ -201,13 +201,14 @@ export class PhoneRoom extends DurableObject {
     if (!ws) return json({error:'The Raspberry Pi host is offline. Check the ai-room service.'},503);
     if (this.pending.size >= 8) return json({error:'The Raspberry Pi host is busy. Retry in a moment.'},429);
     let body;
-    try { body = request.method === 'GET' ? {room:url.searchParams.get('room') || ''} : await readJSON(request); }
+    // A voice turn carries recorded audio (a few hundred KB at most).
+    try { body = request.method === 'GET' ? {room:url.searchParams.get('room') || ''} : await readJSON(request, url.pathname === '/api/voice' ? 3_000_000 : 65536); }
     catch { return json({error:'Invalid room request.'},400); }
     if (this.pending.size >= 8) return json({error:'The Raspberry Pi host is busy. Retry in a moment.'},429);
     // The host receives a named room operation, never an arbitrary URL or command.
     const action = url.pathname.slice('/api/'.length), id = crypto.randomUUID();
     return new Promise(resolve => {
-      const timeout = action === 'send' ? 180_000 : 15_000;
+      const timeout = action === 'send' || action === 'voice' ? 180_000 : action === 'speak' ? 30_000 : 15_000;
       const timer = setTimeout(() => this.finish(id,json({error:'The Raspberry Pi host did not answer. Check the ai-room service.'},504)),timeout);
       this.pending.set(id,{resolve,timer,ws});
       try { ws.send(JSON.stringify({type:'request',id,action,body})); }
@@ -216,7 +217,7 @@ export class PhoneRoom extends DurableObject {
   }
   webSocketMessage(ws, raw) {
     if (!this.phones().includes(ws)) return;
-    if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 750_000) { this.disconnected(ws); ws.close(1009,'Response too large'); return; }
+    if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 4_000_000) { this.disconnected(ws); ws.close(1009,'Response too large'); return; }
     try {
       const body = JSON.parse(raw);
       if (body.type === 'ready' && body.protocol === PROTOCOL) {

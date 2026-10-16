@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Room — Your shared room</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Room — Claude</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
 <body>
 <aside>
   <a class="brand" href="index.html"><span class="brand-icon" aria-hidden="true">◎</span> AI Room<span class="local">PI 5</span></a>
@@ -8,19 +8,27 @@
   <div class="side-bottom"><div class="private-dot"></div><strong>A room on your Raspberry Pi</strong><p>Saved on your Pi 5. The host starts automatically.</p><button id="export" class="text-button">Export conversations ↗</button></div>
 </aside>
 <main>
-  <header><div><div class="eyebrow">YOU + GPT + CLAUDE</div><h1 id="room-title">New conversation</h1></div><div class="header-right"><span class="plan-badge">Subscription connections</span><button id="connections-button" class="icon-button" aria-label="Show connection settings">⚙</button></div></header>
-  <section id="connections" class="connections" aria-label="Assistant connections">
-    <div class="connection" data-provider="gpt"><span class="avatar gpt">G</span><div><strong>GPT <small>via Codex</small></strong><span id="gpt-status">Not connected on this Raspberry Pi</span></div><button id="gpt-login">Setup command</button></div>
+  <header><div><div class="eyebrow">YOU + CLAUDE</div><h1 id="room-title">New conversation</h1></div><div class="header-right"><button id="talk-header" class="talk-small" type="button">🎙 Talk</button><button id="connections-button" class="icon-button" aria-label="Show settings">⚙</button></div></header>
+  <section id="connections" class="connections" aria-label="Settings" hidden>
     <div class="connection" data-provider="claude"><span class="avatar claude">C</span><div><strong>Claude <small>via Claude Code</small></strong><span id="claude-status">Not connected on this Raspberry Pi</span></div><button id="claude-login">Setup command</button></div>
+    <div class="connection voice-setting"><span class="avatar voice-avatar">♪</span><div><strong>Voice</strong><select id="voice-choice" aria-label="Claude's voice"></select></div><button id="voice-preview" type="button">Preview</button></div>
     <button id="refresh" class="text-button">Refresh</button>
   </section>
   <div id="notice" role="status" aria-live="polite"></div>
-  <section id="chat" class="chat" aria-label="Shared conversation" aria-live="polite" aria-relevant="additions text">
-    <div id="welcome" class="welcome"><div class="room-mark"><span class="orb you">Y</span><span class="orb gpt">G</span><span class="orb claude">C</span></div><div class="eyebrow">THREE VOICES. ONE CONVERSATION.</div><h2>Finally, all in the same room.</h2><p>Ask one assistant, get both perspectives,<br>or let them talk it through together.</p><div class="suggestions"><button data-prompt="Roll call: introduce yourself in one sentence. Then tell me how we can work together in this shared chat.">Start with a roll call <span>↗</span></button><button data-prompt="Help me think through an idea. First ask me what I am trying to accomplish, then each give a different perspective.">Think through an idea <span>↗</span></button></div></div>
+  <section id="chat" class="chat" aria-label="Conversation" aria-live="polite" aria-relevant="additions text">
+    <div id="welcome" class="welcome"><div class="room-mark"><span class="orb claude">C</span></div><div class="eyebrow">CLAUDE, ON YOUR PI</div><h2>Just talk.</h2><p>Tap Talk and speak. Claude listens, answers out loud,<br>and keeps listening until you end the conversation.</p><div class="suggestions"><button id="talk-welcome" class="talk-big" type="button">🎙 Talk to Claude</button></div></div>
     <div id="messages"></div>
   </section>
-  <footer><form id="composer"><div class="recipient-row"><span>Send to</span><div class="segments" role="group" aria-label="Choose recipient"><button type="button" data-target="both" class="selected">Both</button><button type="button" data-target="gpt">GPT</button><button type="button" data-target="claude">Claude</button><button type="button" data-target="discuss">Talk it through</button></div><label id="rounds-label" hidden><select id="rounds" aria-label="Discussion rounds"><option value="1">1 round · 2 replies</option><option value="2" selected>2 rounds · 4 replies</option><option value="3">3 rounds · 6 replies</option></select></label></div><textarea id="input" rows="2" maxlength="12000" placeholder="Bring something to the conversation…" aria-label="Your message"></textarea><div class="composer-bottom"><span id="send-hint">Ask ChatGPT and Claude.</span><div><button type="button" id="stop" hidden>■ Stop</button><button type="submit" id="send">Send message <span>↑</span></button></div></div></form><div class="footnote">Service logins stay on your Raspberry Pi. <button id="about-button">How this works</button></div></footer>
+  <footer><form id="composer"><textarea id="input" rows="2" maxlength="12000" placeholder="Or type to Claude…" aria-label="Your message"></textarea><div class="composer-bottom"><button type="button" id="talk" class="talk-small">🎙 Talk</button><div><button type="button" id="stop" hidden>■ Stop</button><button type="submit" id="send">Send <span>↑</span></button></div></div></form><div class="footnote">Your conversations and Claude’s login stay on your Raspberry Pi. <button id="about-button">How this works</button></div></footer>
 </main>
-<dialog id="about"><h2>One conversation, hosted by your Pi.</h2><p>Cloudflare serves this interface and carries authenticated room requests to your Raspberry Pi 5. Conversations and assistant service logins stay on the Pi.</p><p>The systemd host starts at boot and reconnects automatically, so your browsers can come and go.</p><p>Connect ChatGPT and Claude once on the Pi, then ask either service or let both discuss a prompt.</p><form method="dialog"><button>Got it</button></form></dialog>
-<dialog id="pairing"><h2>Connecting to Raspberry Pi</h2><p id="pairing-detail">Enter your six-digit AI Room PIN. Your conversations and assistant logins remain on the Pi.</p><form id="pairing-form"><label>PIN<input id="pair-pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label><button type="submit">Connect</button><p id="pairing-error" role="status"></p></form><form method="dialog"><button>Close</button></form></dialog>
+<section id="voice" class="voice" hidden aria-label="Voice conversation">
+  <div class="voice-top"><span class="eyebrow">CLAUDE</span><button id="voice-end" type="button" class="voice-end">End</button></div>
+  <button id="voice-orb" class="voice-orb" type="button" aria-label="Claude"><span id="voice-ring" class="voice-ring"></span><span class="voice-core">C</span></button>
+  <div id="voice-state" class="voice-state" role="status" aria-live="polite">Starting…</div>
+  <p id="voice-heard" class="voice-heard"></p>
+  <p id="voice-reply" class="voice-reply"></p>
+  <div class="voice-bottom"><button id="voice-mute" type="button">Pause listening</button></div>
+</section>
+<dialog id="about"><h2>Claude, hosted by your Pi.</h2><p>Cloudflare serves this page and carries your signed-in requests to your Raspberry Pi 5. Conversations and Claude’s login stay on the Pi.</p><p>Talking uses speech recognition and a voice that both run on the Pi itself; your audio is not sent to any other service. Claude answers through Claude Code, with the same access to the Pi it has in text.</p><form method="dialog"><button>Got it</button></form></dialog>
+<dialog id="pairing"><h2>Connecting to Raspberry Pi</h2><p id="pairing-detail">Enter your six-digit AI Room PIN. Your conversations and Claude’s login remain on the Pi.</p><form id="pairing-form"><label>PIN<input id="pair-pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label><button type="submit">Connect</button><p id="pairing-error" role="status"></p></form><form method="dialog"><button>Close</button></form></dialog>
 </body></html>
