@@ -5,7 +5,7 @@ const exec=promisify(execFile);
 // Claude Code is the only assistant. Earlier conversations may still contain
 // ChatGPT turns; they stay in the history and are labelled as such.
 const SPOKEN='The user is talking to you out loud, often while driving, and your reply will be read aloud by a text-to-speech voice. '+
-  'Answer like a person in conversation: usually one to three short sentences, warm and direct. No markdown, headings, bullet lists, tables, code blocks, links or emoji. '+
+  'Answer like a person in conversation: usually one to three short sentences, warm and direct. Sound like a friend talking, not a manual: use contractions, plain everyday words, and start with the answer. No markdown, headings, bullet lists, tables, code blocks, links or emoji. '+
   'Spell out what a listener needs (say "about five minutes", not "~5 min"). If the user asks you to do something on the Pi, do it with your tools, then say in a sentence what happened. '+
   'If an answer truly needs detail, give the short version and offer to put the rest in the chat.\n\n';
 
@@ -40,7 +40,7 @@ export class CLIProviders {
   async reply(prompt,context,signal,{spoken=false,session=null,resume=false}={}) {
     const attempt=async continuing=>{
       const input=continuing?(spoken?SPOKEN:'')+prompt:this.transcript(prompt,context,{spoken});
-      const args=['-p',input,'--output-format','text','--model',this.model,
+      const args=['-p',input,'--output-format','text','--model',this.model,...(spoken?['--effort','low']:[]),
         ...(this.systemAccess?['--permission-mode','bypassPermissions']:[]),
         ...(this.owner?['--append-system-prompt',OWNER_CONTEXT]:[]),
         ...(session?(continuing?['--resume',session]:['--session-id',session]):['--no-session-persistence'])];

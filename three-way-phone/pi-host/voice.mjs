@@ -76,7 +76,7 @@ export class Voice {
     const dir=await mkdtemp(join(tmpdir(),'ai-room-voice-'));
     try {
       const wav=join(dir,'reply.wav'),mp3=join(dir,'reply.mp3');
-      await this.run(join(this.root,'piper/piper'),['-m',join(this.root,'voices',`${name}.onnx`),'-f',wav,'--sentence_silence','0.25'],{signal,input:spoken});
+      await this.run(join(this.root,'piper/piper'),['-m',join(this.root,'voices',`${name}.onnx`),'-f',wav,'--sentence_silence','0.18','--noise_scale','0.85','--noise_w','1.0','--length_scale','0.93'],{signal,input:spoken});
       await this.run('ffmpeg',['-loglevel','error','-y','-i',wav,'-ac','1','-b:a','48k',mp3],{signal});
       return (await readFile(mp3)).toString('base64');
     } finally {await rm(dir,{recursive:true,force:true})}
