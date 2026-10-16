@@ -40,7 +40,7 @@ export class CLIProviders {
   async reply(prompt,context,signal,{spoken=false,session=null,resume=false}={}) {
     const attempt=async continuing=>{
       const input=continuing?(spoken?SPOKEN:'')+prompt:this.transcript(prompt,context,{spoken});
-      const args=['-p',input,'--output-format','text','--model',this.model,...(spoken?['--effort','low']:[]),
+      const args=['-p',input,'--output-format','text','--model',spoken?(process.env.AI_ROOM_VOICE_MODEL||'haiku'):this.model,...(spoken?['--effort','low']:[]),
         ...(this.systemAccess?['--permission-mode','bypassPermissions']:[]),
         ...(this.owner?['--append-system-prompt',OWNER_CONTEXT]:[]),
         ...(session?(continuing?['--resume',session]:['--session-id',session]):['--no-session-persistence'])];
