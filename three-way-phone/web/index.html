@@ -27,7 +27,7 @@
   <div id="voice-state" class="voice-state" role="status" aria-live="polite">Starting…</div>
   <p id="voice-heard" class="voice-heard"></p>
   <p id="voice-reply" class="voice-reply"></p>
-  <div class="voice-bottom"><button id="voice-mute" type="button">Pause listening</button></div>
+  <div class="voice-bottom"><button id="voice-mute" class="voice-mute" type="button" aria-pressed="false">🎤 Mute mic</button></div>
 </section>
 <dialog id="about"><h2>Claude, hosted by your Pi.</h2><p>Cloudflare serves this page and carries your signed-in requests to your Raspberry Pi 5. Conversations and Claude’s login stay on the Pi.</p><p>Talking uses speech recognition and a voice that both run on the Pi itself; your audio is not sent to any other service. Claude answers through Claude Code, with the same access to the Pi it has in text.</p><form method="dialog"><button>Got it</button></form></dialog>
 <dialog id="pairing"><h2>Connecting to Raspberry Pi</h2><p id="pairing-detail">Enter your six-digit AI Room PIN. Your conversations and Claude’s login remain on the Pi.</p><form id="pairing-form"><label>PIN<input id="pair-pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label><button type="submit">Connect</button><p id="pairing-error" role="status"></p></form><form method="dialog"><button>Close</button></form></dialog>

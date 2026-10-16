@@ -189,14 +189,14 @@ async function startVoice() {
   voice.processor.onaudioprocess = event => hear(event.inputBuffer.getChannelData(0));
   voice.source.connect(voice.processor); voice.processor.connect(voice.context.destination);
   VAD.frameMs = 2048 / voice.context.sampleRate * 1000;
-  voice.active = true; voice.muted = false; $('voice-mute').textContent = 'Pause listening';
+  voice.active = true; setMuted(false);
   try { voice.wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
   listen();
 }
 function listen() {
   if (!voice.active) return;
   voice.chunks = []; voice.speaking = false; voice.speechMs = 0; voice.silenceMs = 0;
-  setVoiceState(voice.muted ? 'paused' : 'listening', voice.muted ? 'Paused. Tap Resume when you want to talk.' : 'Listening…');
+  setVoiceState(voice.muted ? 'paused' : 'listening', voice.muted ? 'Mic muted. Tap Unmute when you want to talk.' : 'Listening…');
 }
 // Every ~45 ms of microphone audio: track the noise floor, find the start and
 // end of speech, and keep the samples of the turn (plus a little before it).
@@ -292,9 +292,18 @@ $('voice-orb').onclick = () => {
   if (voice.state === 'thinking') { voice.turn = null; post('stop').catch(() => {}); listen(); return; }
   if (voice.state === 'error') listen();
 };
+// Mute turns the microphone itself off (not just ignored), so road and cabin
+// noise cannot start a turn. Claude can still finish what it is saying.
+function setMuted(muted) {
+  voice.muted = muted;
+  for (const track of voice.stream?.getAudioTracks() || []) track.enabled = !muted;
+  $('voice-mute').textContent = muted ? '🔇 Mic muted · tap to unmute' : '🎤 Mute mic';
+  $('voice-mute').setAttribute('aria-pressed', muted ? 'true' : 'false');
+  $('voice-mute').classList.toggle('muted', muted);
+  $('voice').classList.toggle('mic-muted', muted);
+}
 $('voice-mute').onclick = () => {
-  voice.muted = !voice.muted;
-  $('voice-mute').textContent = voice.muted ? 'Resume listening' : 'Pause listening';
+  setMuted(!voice.muted);
   if (voice.state === 'listening' || voice.state === 'paused' || $('voice').dataset.state === 'hearing') listen();
 };
 for (const id of ['talk','talk-header','talk-welcome']) $(id).onclick = () => void startVoice();
