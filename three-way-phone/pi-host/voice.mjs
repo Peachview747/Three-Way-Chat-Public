@@ -8,12 +8,17 @@ import {join} from 'node:path';
 
 // Medium Piper voices only: the "high" ones take longer to speak than to play on a Pi 5.
 export const VOICES = {
-  'en_US-hfc_female-medium':{label:'Hannah (US)'},
-  'en_US-amy-medium':{label:'Amy (US)'},
-  'en_US-kristin-medium':{label:'Kristin (US)'},
-  'en_GB-jenny_dioco-medium':{label:'Jenny (UK)'},
+  'en_US-ryan-medium':{label:'Ryan (US, male)'},
+  'en_US-joe-medium':{label:'Joe (US, male)'},
+  'en_US-john-medium':{label:'John (US, male)'},
+  'en_US-norman-medium':{label:'Norman (US, male)'},
+  'en_GB-alan-medium':{label:'Alan (UK, male)'},
+  'en_US-hfc_female-medium':{label:'Hannah (US, female)'},
+  'en_US-amy-medium':{label:'Amy (US, female)'},
+  'en_US-kristin-medium':{label:'Kristin (US, female)'},
+  'en_GB-jenny_dioco-medium':{label:'Jenny (UK, female)'},
 };
-export const DEFAULT_VOICE = 'en_US-hfc_female-medium';
+export const DEFAULT_VOICE = 'en_US-ryan-medium';
 const MAX_AUDIO = 3_000_000, MAX_SPEECH = 4000;
 
 export class Voice {
