@@ -132,10 +132,14 @@ $('pairing-form').onsubmit = async event => { event.preventDefault(); try { awai
 const VOICE_KEY = 'airoom-voice';
 const SAMPLE_RATE = 16000;
 const voice = {active:false, state:'idle', stream:null, context:null, source:null, processor:null, chunks:[], preroll:[],
-  speaking:false, speechMs:0, silenceMs:0, floor:0.004, muted:false, player:null, turn:null};
+  speaking:false, speechMs:0, silenceMs:0, floor:0.004, levels:[], muted:false, player:null, turn:null};
 // Tuned for a car cabin: speech must rise clearly above the running noise
 // floor, and a pause of about a second ends the turn.
-const VAD = {frameMs:0, startMs:180, endMs:1100, minSpeechMs:350, maxMs:60000, prerollMs:350, ratio:3.2, minLevel:0.012};
+// The background level is learned, not fixed: the quiet end (15th percentile)
+// of the last six seconds. Steady road noise becomes that baseline, and only
+// sound clearly above it (a voice) counts as talking.
+const VAD = {frameMs:0, startMs:180, endMs:1100, minSpeechMs:350, maxMs:60000, prerollMs:350,
+  startRatio:2.1, endRatio:1.9, minLevel:0.008, floorWindowMs:6000, calibrateMs:900};
 function voiceChoice() { return localStorage.getItem(VOICE_KEY) || current?.voice?.default || ''; }
 let lastVoices = '';
 function renderVoices(info) {
@@ -171,7 +175,7 @@ function setVoiceState(state, text) {
 async function startVoice() {
   if (voice.active) return;
   if (!navigator.mediaDevices?.getUserMedia) { notice('This browser does not let pages use the microphone.'); return; }
-  $('voice').hidden = false; $('voice-heard').textContent = ''; $('voice-reply').textContent = '';
+  $('voice').hidden = false; showHeard('', false); $('voice-reply').textContent = '';
   setVoiceState('starting','Starting the microphone…');
   // Play something silent inside the tap so later replies are allowed to play.
   audioPlayer().src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='; audioPlayer().play().catch(() => {});
@@ -187,7 +191,13 @@ async function startVoice() {
   voice.source = voice.context.createMediaStreamSource(voice.stream);
   voice.processor = voice.context.createScriptProcessor(2048, 1, 1);
   voice.processor.onaudioprocess = event => hear(event.inputBuffer.getChannelData(0));
-  voice.source.connect(voice.processor); voice.processor.connect(voice.context.destination);
+  // Road noise is mostly low rumble (tyres, wind) and some hiss. Speech lives
+  // roughly between 120 Hz and 5 kHz, so cut below and above before the page
+  // judges whether someone is talking and before recording the turn.
+  const rumble = voice.context.createBiquadFilter(); rumble.type = 'highpass'; rumble.frequency.value = 120; rumble.Q.value = 0.7;
+  const hiss = voice.context.createBiquadFilter(); hiss.type = 'lowpass'; hiss.frequency.value = 5000; hiss.Q.value = 0.7;
+  voice.source.connect(rumble); rumble.connect(hiss); hiss.connect(voice.processor); voice.processor.connect(voice.context.destination);
+  voice.filters = [rumble, hiss];
   VAD.frameMs = 2048 / voice.context.sampleRate * 1000;
   voice.active = true; setMuted(false);
   try { voice.wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
@@ -205,16 +215,23 @@ function hear(samples) {
   let sum = 0; for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
   const level = Math.sqrt(sum / samples.length);
   $('voice-ring').style.setProperty('--level', String(Math.min(1, level * 12)));
+  voice.levels.push(level);
+  while (voice.levels.length * VAD.frameMs > VAD.floorWindowMs) voice.levels.shift();
   if (voice.state !== 'listening') return;
   const copy = new Float32Array(samples);
-  const loud = level > Math.max(VAD.minLevel, voice.floor * VAD.ratio);
+  const sorted = [...voice.levels].sort((a, b) => a - b);
+  voice.floor = sorted[Math.floor(sorted.length * 0.15)] || 0;
+  // Still learning the room: keep the pre-roll, start nothing.
+  const calibrated = voice.levels.length * VAD.frameMs >= VAD.calibrateMs;
+  const loud = calibrated && level > Math.max(VAD.minLevel, voice.floor * (voice.speaking ? VAD.endRatio : VAD.startRatio));
   if (!voice.speaking) {
     voice.preroll.push(copy);
     while (voice.preroll.length * VAD.frameMs > VAD.prerollMs + VAD.startMs) voice.preroll.shift();
     if (loud) voice.speechMs += VAD.frameMs;
-    else { voice.speechMs = 0; voice.floor = voice.floor * 0.95 + level * 0.05; }
+    else voice.speechMs = 0;
     if (voice.speechMs >= VAD.startMs) {
       voice.speaking = true; voice.chunks = voice.preroll; voice.preroll = []; voice.silenceMs = 0;
+      voice.utterance = crypto.randomUUID(); voice.previewAt = Date.now(); showHeard('', false);
       setVoiceState('hearing','Listening…');
       voice.state = 'listening'; $('voice').dataset.state = 'hearing';
     }
@@ -223,32 +240,72 @@ function hear(samples) {
   voice.chunks.push(copy);
   voice.speechMs += VAD.frameMs;
   voice.silenceMs = loud ? 0 : voice.silenceMs + VAD.frameMs;
+  previewSpeech();
   if (voice.silenceMs >= VAD.endMs || voice.chunks.length * VAD.frameMs >= VAD.maxMs) {
     const chunks = voice.chunks; voice.chunks = []; voice.speaking = false;
     if (voice.speechMs - voice.silenceMs < VAD.minSpeechMs) { listen(); return; }
     void sendTurn(chunks);
   }
 }
+// The shadow box: what the Pi hears so far, refreshed every couple of seconds
+// while you talk (one request at a time), then the final words in full.
+const PREVIEW_MS = 2000;
+function showHeard(text, final) {
+  $('voice-heard').textContent = text;
+  $('voice-heard').classList.toggle('final', final);
+  $('voice-heard').hidden = !text;
+}
+function previewSpeech() {
+  const now = Date.now();
+  if (voice.previewing || voice.speechMs < 1000 || now - (voice.previewAt || 0) < PREVIEW_MS) return;
+  voice.previewing = true; voice.previewAt = now;
+  const utterance = voice.utterance, audio = encodeWav(voice.chunks, voice.context.sampleRate);
+  api('hear',{audio}).then(result => {
+    if (voice.utterance === utterance && voice.speaking && result.text) showHeard(result.text + ' …', false);
+  }).catch(() => {}).finally(() => { voice.previewing = false; });
+}
 async function sendTurn(chunks) {
   setVoiceState('thinking','Thinking…');
+  startThinkingSound();
   const turn = voice.turn = crypto.randomUUID();
+  voice.utterance = turn;
   try {
-    const audio = encodeWav(chunks, voice.context.sampleRate);
-    const result = await api('voice',{request_id:turn, room, audio, voice:voiceChoice()});
+    const heard = (await api('hear',{audio:encodeWav(chunks, voice.context.sampleRate)})).text;
     if (voice.turn !== turn || !voice.active) return;
-    if (!result.heard) { listen(); return; }
-    $('voice-heard').textContent = result.heard;
+    if (!heard || !/[a-z0-9]/i.test(heard)) { stopThinkingSound(); showHeard('', false); listen(); return; }
+    showHeard(heard, true);
+    $('voice-reply').textContent = '';
+    const result = await api('voice',{request_id:turn, room, text:heard, voice:voiceChoice()});
+    if (voice.turn !== turn || !voice.active) return;
+    stopThinkingSound();
     $('voice-reply').textContent = result.reply;
     void refresh();
     setVoiceState('speaking','Claude is speaking. Tap to interrupt.');
     await playAudio(result.audio, result.mime);
   } catch (e) {
+    stopThinkingSound();
     if (voice.turn !== turn || !voice.active) return;
     setVoiceState('error', e.message || 'That did not go through.');
     await new Promise(resolve => setTimeout(resolve, 2500));
   }
   if (voice.turn === turn) listen();
 }
+// A soft two-note chime every 1.6 s while Claude works, made in the browser.
+function chime() {
+  const context = voice.context; if (!context || context.state !== 'running') return;
+  const now = context.currentTime;
+  for (const [offset, pitch] of [[0, 587.33], [0.16, 880]]) {
+    const tone = context.createOscillator(), level = context.createGain();
+    tone.type = 'sine'; tone.frequency.value = pitch;
+    level.gain.setValueAtTime(0.0001, now + offset);
+    level.gain.exponentialRampToValueAtTime(0.07, now + offset + 0.02);
+    level.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.35);
+    tone.connect(level); level.connect(context.destination);
+    tone.start(now + offset); tone.stop(now + offset + 0.4);
+  }
+}
+function startThinkingSound() { stopThinkingSound(); chime(); voice.thinkingTimer = setInterval(chime, 1600); }
+function stopThinkingSound() { clearInterval(voice.thinkingTimer); voice.thinkingTimer = null; }
 // Mono 16 kHz 16-bit WAV, base64: small enough to send, and every browser can make it.
 function encodeWav(chunks, rate) {
   let total = 0; for (const chunk of chunks) total += chunk.length;
@@ -274,13 +331,13 @@ function encodeWav(chunks, rate) {
   return btoa(binary);
 }
 function stopVoice() {
-  voice.active = false; voice.turn = null;
+  voice.active = false; voice.turn = null; stopThinkingSound();
   try { voice.player?.pause(); } catch {}
-  try { voice.processor?.disconnect(); voice.source?.disconnect(); } catch {}
+  try { voice.processor?.disconnect(); voice.source?.disconnect(); for (const filter of voice.filters || []) filter.disconnect(); } catch {}
   for (const track of voice.stream?.getTracks() || []) track.stop();
   voice.context?.close().catch(() => {});
   voice.wakeLock?.release?.().catch?.(() => {});
-  Object.assign(voice, {stream:null, context:null, source:null, processor:null, chunks:[], preroll:[], wakeLock:null});
+  Object.assign(voice, {stream:null, context:null, source:null, processor:null, chunks:[], preroll:[], levels:[], wakeLock:null});
   $('voice').hidden = true; setVoiceState('idle','');
   if (current?.busy) post('stop').catch(() => {});
   void refresh();
@@ -289,7 +346,7 @@ $('voice-end').onclick = stopVoice;
 // Tap the orb: interrupt Claude, or stop waiting for a reply, and listen again.
 $('voice-orb').onclick = () => {
   if (voice.state === 'speaking') { try { voice.player.pause(); voice.player.onended?.(); } catch {} return; }
-  if (voice.state === 'thinking') { voice.turn = null; post('stop').catch(() => {}); listen(); return; }
+  if (voice.state === 'thinking') { voice.turn = null; stopThinkingSound(); post('stop').catch(() => {}); listen(); return; }
   if (voice.state === 'error') listen();
 };
 // Mute turns the microphone itself off (not just ignored), so road and cabin

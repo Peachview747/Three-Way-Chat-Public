@@ -116,7 +116,7 @@ export default {
       if (!Array.isArray(history.rooms) || !Array.isArray(history.messages)) return json({error:'Invalid conversation backup.'},400);
       return backupToGitHub(history,env);
     }
-    const routes = {phone:'GET',state:'GET',export:'GET',send:'POST',new:'POST',refresh:'POST',login:'POST',stop:'POST',voice:'POST',speak:'POST'};
+    const routes = {phone:'GET',state:'GET',export:'GET',send:'POST',new:'POST',refresh:'POST',login:'POST',stop:'POST',voice:'POST',speak:'POST',hear:'POST'};
     const action = url.pathname.slice('/api/'.length);
     if (!url.pathname.startsWith('/api/') || !Object.hasOwn(routes, action)) return json({error:'Not found.'},404);
     const phone = action === 'phone';
@@ -202,13 +202,13 @@ export class PhoneRoom extends DurableObject {
     if (this.pending.size >= 8) return json({error:'The Raspberry Pi host is busy. Retry in a moment.'},429);
     let body;
     // A voice turn carries recorded audio (a few hundred KB at most).
-    try { body = request.method === 'GET' ? {room:url.searchParams.get('room') || ''} : await readJSON(request, url.pathname === '/api/voice' ? 3_000_000 : 65536); }
+    try { body = request.method === 'GET' ? {room:url.searchParams.get('room') || ''} : await readJSON(request, url.pathname === '/api/voice' || url.pathname === '/api/hear' ? 3_000_000 : 65536); }
     catch { return json({error:'Invalid room request.'},400); }
     if (this.pending.size >= 8) return json({error:'The Raspberry Pi host is busy. Retry in a moment.'},429);
     // The host receives a named room operation, never an arbitrary URL or command.
     const action = url.pathname.slice('/api/'.length), id = crypto.randomUUID();
     return new Promise(resolve => {
-      const timeout = action === 'send' || action === 'voice' ? 180_000 : action === 'speak' ? 30_000 : 15_000;
+      const timeout = action === 'send' || action === 'voice' ? 180_000 : action === 'speak' || action === 'hear' ? 30_000 : 15_000;
       const timer = setTimeout(() => this.finish(id,json({error:'The Raspberry Pi host did not answer. Check the ai-room service.'},504)),timeout);
       this.pending.set(id,{resolve,timer,ws});
       try { ws.send(JSON.stringify({type:'request',id,action,body})); }

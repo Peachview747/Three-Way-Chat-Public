@@ -43,7 +43,9 @@ export class Voice {
     try {
       const input=join(dir,'input'),wav=join(dir,'speech.wav');
       await writeFile(input,audio);
-      await this.run('ffmpeg',['-loglevel','error','-y','-i',input,'-ar','16000','-ac','1','-c:a','pcm_s16le',wav],{signal});
+      // Cut road rumble below speech. Whisper copes with the rest of the noise
+      // itself; a stronger noise reducer made its transcripts worse in tests.
+      await this.run('ffmpeg',['-loglevel','error','-y','-i',input,'-af','highpass=f=100','-ar','16000','-ac','1','-c:a','pcm_s16le',wav],{signal});
       const form=new FormData();
       form.append('file',new Blob([await readFile(wav)],{type:'audio/wav'}),'speech.wav');
       form.append('response_format','json');form.append('temperature','0');

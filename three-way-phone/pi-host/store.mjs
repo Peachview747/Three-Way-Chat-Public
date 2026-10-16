@@ -60,6 +60,7 @@ export class ConversationStore {
       if(action==='stop') {this.active?.abort();this.active=null;return reply(200,{ok:true,notice:'Stopped the current reply.'});}
       if(action==='speak')return reply(200,await this.preview(body));
       if(action==='voice')return reply(200,await this.converse(body));
+      if(action==='hear')return reply(200,await this.hear(body));
       if(action!=='send')return reply(404,{error:'Unknown room action.'});
       if(this.active)throw new StoreError('The assistants are already replying.');
       const text=this.validateSend(body),existing=this.history.messages.find(m=>m.id===body.request_id);
@@ -89,11 +90,13 @@ export class ConversationStore {
   async converse(body) {
     if(!this.voice)throw new StoreError('Voice is not set up on this Raspberry Pi.');
     if(!isUUID(body.request_id)||typeof body.room!=='string'||!this.history.rooms.some(r=>r.id===body.room))throw new StoreError('Invalid voice turn. Refresh the room and retry.');
-    if(typeof body.audio!=='string'||!body.audio||!AUDIO.test(body.audio))throw new StoreError('No audio arrived.');
+    // Either the recording, or the text the page already had transcribed with hear.
+    const typed=typeof body.text==='string';
+    if(typed?!body.text.trim()||body.text.length>4000:typeof body.audio!=='string'||!body.audio||!AUDIO.test(body.audio))throw new StoreError('No audio arrived.');
     if(this.active)throw new StoreError('Claude is already replying.');
     const controller=new AbortController();this.active=controller;
     try {
-      const heard=await this.voice.transcribe(Buffer.from(body.audio,'base64'),controller.signal);
+      const heard=typed?body.text.trim():await this.voice.transcribe(Buffer.from(body.audio,'base64'),controller.signal);
       // Noise or silence: nothing to answer, and nothing saved.
       if(!heard||!/[a-z0-9]/i.test(heard))return {heard:'',reply:'',audio:null};
       if(this.history.messages.length+2>MAX_MESSAGES)throw new StoreError('This host supports 500 saved messages.');
@@ -109,6 +112,12 @@ export class ConversationStore {
       const audio=await this.voice.speak(answer,body.voice,controller.signal);
       return {heard,reply:answer,audio,mime:'audio/mpeg'};
     } finally {if(this.active===controller)this.active=null}
+  }
+  // Transcription only, for the live text while the user is still talking.
+  async hear(body) {
+    if(!this.voice)throw new StoreError('Voice is not set up on this Raspberry Pi.');
+    if(typeof body.audio!=='string'||!body.audio||!AUDIO.test(body.audio))throw new StoreError('No audio arrived.');
+    return {text:await this.voice.transcribe(Buffer.from(body.audio,'base64'),AbortSignal.timeout(30_000))};
   }
   async preview(body) {
     if(!this.voice)throw new StoreError('Voice is not set up on this Raspberry Pi.');
