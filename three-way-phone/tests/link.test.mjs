@@ -99,10 +99,8 @@ test('oversized requests fail; public assets keep the original layout without cr
   const f=await fixture(t),p=await f.connect();await p.ready();
   assert.equal((await f.post('send',{text:'x'.repeat(65537)})).status,400);
   const html=await(await f.fetch('/')).text(),js=await(await f.fetch('/app.js')).text();
-  assert.ok(html.includes('Just talk.')&&!html.includes('Talk it through'));
-  assert.ok(html.includes('Connecting to Raspberry Pi')&&!html.includes('Connecting to your Raspberry Pi'));
-  assert.ok(html.includes('id="pair-pin"')&&!html.includes('pair-room')&&!html.includes('pair-key'));
-  assert.ok(!html.includes('id="gpt-login"')&&html.includes('id="claude-login"')&&html.includes('id="voice-orb"'));
+  assert.ok(html.includes('AI Room has moved')&&html.includes('tap <strong>Claude</strong>'),'the old address points to the portal');
+  assert.ok(!/workers\.dev|tv\./.test(html),'without naming the portal address');
   assert.ok(!html.includes(f.phoneKey)&&!js.includes(f.pin));
   assert.ok(!js.includes('innerHTML')&&!js.includes('backend-api')&&!js.includes('api.anthropic'));
   const logout=await f.post('logout');assert.ok(logout.headers.get('set-cookie').includes('Max-Age=0'));

@@ -414,8 +414,10 @@ $('voice-mute').onclick = () => {
 for (const id of ['talk','talk-header','talk-welcome']) $(id).onclick = () => void startVoice();
 
 if (IN_PORTAL) {
-  // A way back to the portal's services, where the brand link would go.
-  const back = $('to-services'); back.hidden = false; back.onclick = () => { location.href = '/'; };
+  // The portal's Apps switcher (apps-menu.js, added by the portal) takes the
+  // place of AI Room's own way back.
+  const slot = document.createElement('span'); slot.dataset.appsMenu = '';
+  $('to-services').replaceWith(slot); globalThis.videoPilotApps?.mount();
   document.documentElement.classList.add('in-portal');
 }
 async function start() {

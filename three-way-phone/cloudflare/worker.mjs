@@ -82,9 +82,18 @@ async function backupToGitHub(history, env) {
   return json({ok:true});
 }
 
+// AI Room now lives inside the Video Pilot portal (Claude tile). The old page
+// says so without naming the portal's address, which stays private. The
+// API stays for anything still connected.
+const MOVED = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Room has moved</title></head>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#f8f9f6;color:#242a30;font:16px/1.6 system-ui,sans-serif;text-align:center;padding:24px">
+<div><div style="font-size:44px;color:#ba6949">◎</div><h1 style="font-family:Georgia,serif;font-weight:400">AI Room has moved</h1>
+<p>Claude now lives in your Video Pilot portal. Open Video Pilot and tap <strong>Claude</strong>.<br>Your conversations came with it.</p></div></body></html>`;
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if ((url.pathname === '/' || url.pathname === '/index.html') && ['GET', 'HEAD'].includes(request.method))
+      return new Response(request.method === 'HEAD' ? null : MOVED, { headers: { ...security, 'Content-Type': 'text/html; charset=utf-8' } });
     if (url.pathname === '/health' && request.method === 'GET') return json({ app: 'three-way-phone-link', protocol: PROTOCOL });
     const asset = assets[url.pathname === '/index.html' ? '/' : url.pathname];
     if (asset && ['GET', 'HEAD'].includes(request.method)) {
