@@ -28,18 +28,19 @@ const KOKORO_VOICES = {
 };
 for(const [id,v] of Object.entries(KOKORO_VOICES))VOICES['kokoro-'+id]=v;
 export const DEFAULT_VOICE = 'kokoro-af_heart';
-const MAX_AUDIO = 3_000_000, MAX_SPEECH = 4000;
+const MAX_AUDIO = 3_000_000, MAX_SPEECH = 4000, KOKORO_PORT = 5011;
 
 export class Voice {
   constructor({root=process.env.AI_ROOM_VOICE_DIR||'/opt/ai-room-voice',port=5010,run=runTool,fetcher=globalThis.fetch,logger=console}={}) {
     this.root=root;this.port=port;this.run=run;this.fetch=fetcher;this.logger=logger;this.server=null;this.stopped=false;
   }
   async available() {
-    try {await Promise.all([access(join(this.root,'whisper.cpp/build/bin/whisper-server')),access(join(this.root,'piper/piper')),access(join(this.root,'kokoro/venv/bin/python'))]);return true}
+    try {await Promise.all([access(join(this.root,'whisper.cpp/build/bin/whisper-server')),access(join(this.root,'piper/piper')),access(join(this.root,'kokoro/venv/bin/python')),access(join(this.root,'kokoro/kokoro_server.py'))]);return true}
     catch {return false}
   }
-  // The recognizer stays loaded; if it exits it is started again.
+  // The recognizer and the Kokoro voice stay loaded; if one exits it is started again.
   start() {
+    this.startKokoro();
     if(this.server||this.stopped)return;
     const child=spawn(join(this.root,'whisper.cpp/build/bin/whisper-server'),['-m',join(this.root,'models/ggml-base.en.bin'),
       '--host','127.0.0.1','--port',String(this.port),'-t','4','--no-timestamps'],{stdio:'ignore'});
@@ -47,7 +48,14 @@ export class Voice {
     child.on('error',error=>this.logger.error('Voice recognizer:',error.message));
     child.on('exit',()=>{if(this.server===child)this.server=null;if(!this.stopped)setTimeout(()=>this.start(),5000)});
   }
-  stop() {this.stopped=true;this.server?.kill('SIGTERM');this.server=null}
+  startKokoro() {
+    if(this.kokoro||this.stopped)return;
+    const child=spawn(join(this.root,'kokoro/venv/bin/python'),['-I',join(this.root,'kokoro/kokoro_server.py'),String(KOKORO_PORT)],{stdio:'ignore'});
+    this.kokoro=child;
+    child.on('error',error=>this.logger.error('Kokoro voice:',error.message));
+    child.on('exit',()=>{if(this.kokoro===child)this.kokoro=null;if(!this.stopped)setTimeout(()=>this.startKokoro(),5000)});
+  }
+  stop() {this.stopped=true;this.server?.kill('SIGTERM');this.server=null;this.kokoro?.kill('SIGTERM');this.kokoro=null}
 
   // Browser audio (webm/opus, mp4/aac, wav…) → text.
   async transcribe(audio,signal) {
@@ -77,6 +85,15 @@ export class Voice {
     } finally {await rm(dir,{recursive:true,force:true})}
   }
 
+  // Kokoro runs as a resident server, so each reply skips loading the model.
+  async kokoroSpeak(voice,text,wav,signal) {
+    let response;
+    try {response=await this.fetch(`http://127.0.0.1:${KOKORO_PORT}/speak`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice,text}),signal})}
+    catch(error) {if(signal?.aborted)throw error;throw new VoiceError('The Kokoro voice is not running on the Pi.')}
+    if(!response.ok)throw new VoiceError('The Kokoro voice failed on the Pi.');
+    await writeFile(wav,Buffer.from(await response.arrayBuffer()));
+  }
+
   // Text → MP3 (plays in every browser), base64.
   async speak(text,voice=DEFAULT_VOICE,signal) {
     const name=Object.hasOwn(VOICES,voice)?voice:DEFAULT_VOICE;
@@ -85,7 +102,7 @@ export class Voice {
     const dir=await mkdtemp(join(tmpdir(),'ai-room-voice-'));
     try {
       const wav=join(dir,'reply.wav'),mp3=join(dir,'reply.mp3');
-      if(name.startsWith('kokoro-'))await this.run(join(this.root,'kokoro/venv/bin/python'),['-I',join(this.root,'kokoro/kokoro_speak.py'),name.slice(7),wav],{signal,input:spoken});
+      if(name.startsWith('kokoro-'))await this.kokoroSpeak(name.slice(7),spoken,wav,signal);
       else await this.run(join(this.root,'piper/piper'),['-m',join(this.root,'voices',`${name}.onnx`),'-f',wav,'--sentence_silence','0.18','--noise_scale','0.95','--noise_w','1.1','--length_scale','0.9'],{signal,input:spoken});
       await this.run('ffmpeg',['-loglevel','error','-y','-i',wav,'-ac','1','-b:a','48k',mp3],{signal});
       return (await readFile(mp3)).toString('base64');
