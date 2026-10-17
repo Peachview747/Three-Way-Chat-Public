@@ -174,24 +174,24 @@ function drawVoiceOrb(now) {
     bars.push([size * 0.1 + i * (width + gap), size / 2 - height / 2, width, height]);
   }
   ctx.clearRect(0, 0, size, size);
-  // The spark always shows faintly; bars that cover it show it in full black.
-  const scale = size * 0.5 / 94;
-  ctx.save();
-  ctx.translate(size / 2 - 47 * scale, size / 2 - 47 * scale);
-  ctx.scale(scale, scale);
-  ctx.fillStyle = '#4b5a52';
-  ctx.fill(SPARK);
-  ctx.restore();
+  // The spark always shows faintly in grey. Where a bar covers it, the spark turns orange.
+  const scale = size * 0.5 / 94, offset = size / 2 - 47 * scale;
+  const drawSpark = colour => {
+    ctx.save();
+    ctx.translate(offset, offset);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = colour;
+    ctx.fill(SPARK);
+    ctx.restore();
+  };
+  drawSpark('#6b7a72');
   ctx.save();
   ctx.beginPath();
   for (const [x, y, w, h] of bars) ctx.rect(x, y, w, h);
   ctx.clip();
-  ctx.translate(size / 2 - 47 * scale, size / 2 - 47 * scale);
-  ctx.scale(scale, scale);
-  ctx.fillStyle = '#000';
-  ctx.fill(SPARK);
+  drawSpark('#e8926a');
   ctx.restore();
-  ctx.fillStyle = '#d98a63';
+  ctx.fillStyle = 'rgba(217, 138, 99, 0.35)';
   for (const [x, y, w, h] of bars) {
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(x, y, w, h, w / 2); else ctx.rect(x, y, w, h);
