@@ -59,7 +59,7 @@ function render(state) {
     $('messages').replaceChildren();
     for (const m of state.messages) {
       const article = document.createElement('article'); article.className = 'message ' + m.author + ' ' + m.status;
-      const avatar = document.createElement('span'); avatar.className = 'avatar ' + (m.author === 'user' ? 'you' : m.author); avatar.textContent = {gpt:'G',claude:'C',user:'Y',system:'!'}[m.author];
+      const avatar = document.createElement('span'); avatar.className = 'avatar ' + (m.author === 'user' ? 'you' : m.author); if (m.author === 'claude') avatar.replaceChildren(claudeMark()); else avatar.textContent = {gpt:'G',user:'Y',system:'!'}[m.author];
       const content = document.createElement('div'); content.className = 'message-content';
       const heading = document.createElement('div'); heading.className = 'message-heading';
       const name = document.createElement('span'); name.textContent = label(m.author); heading.append(name);
@@ -130,6 +130,20 @@ $('pairing-form').onsubmit = async event => { event.preventDefault(); try { awai
 // the voice all run there), plays the answer and listens again. The microphone
 // is ignored while Claude speaks so the car speakers do not answer themselves.
 const VOICE_KEY = 'airoom-voice';
+// The Claude mark: eight black strokes from the centre, built with DOM calls only.
+function claudeMark() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '64%'); svg.setAttribute('height', '64%'); svg.setAttribute('aria-hidden', 'true');
+  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  group.setAttribute('stroke', 'currentColor'); group.setAttribute('stroke-width', '2.6'); group.setAttribute('stroke-linecap', 'round');
+  for (const [x1, y1, x2, y2] of [[12,3,12,21],[3,12,21,12],[5.6,5.6,18.4,18.4],[18.4,5.6,5.6,18.4],[9.5,4,14.5,20],[4,9.5,20,14.5],[14.5,4,9.5,20],[20,9.5,4,14.5]]) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1); line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    group.appendChild(line);
+  }
+  svg.appendChild(group);
+  return svg;
+}
 const SAMPLE_RATE = 16000;
 const voice = {active:false, state:'idle', stream:null, context:null, source:null, processor:null, chunks:[], preroll:[],
   speaking:false, speechMs:0, silenceMs:0, floor:0.004, levels:[], muted:false, player:null, turn:null};
