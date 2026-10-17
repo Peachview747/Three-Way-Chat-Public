@@ -175,7 +175,7 @@ function setVoiceState(state, text) {
 async function startVoice() {
   if (voice.active) return;
   if (!navigator.mediaDevices?.getUserMedia) { notice('This browser does not let pages use the microphone.'); return; }
-  $('voice').hidden = false; showHeard('', false); $('voice-reply').textContent = '';
+  $('voice').hidden = false; showHeard('', false);
   setVoiceState('starting','Starting the microphone…');
   // Play something silent inside the tap so later replies are allowed to play.
   audioPlayer().src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='; audioPlayer().play().catch(() => {});
@@ -274,11 +274,9 @@ async function sendTurn(chunks) {
     if (voice.turn !== turn || !voice.active) return;
     if (!heard || !/[a-z0-9]/i.test(heard)) { stopThinkingSound(); showHeard('', false); listen(); return; }
     showHeard(heard, true);
-    $('voice-reply').textContent = '';
     const result = await api('voice',{request_id:turn, room, text:heard, voice:voiceChoice()});
     if (voice.turn !== turn || !voice.active) return;
     stopThinkingSound();
-    $('voice-reply').textContent = result.reply;
     void refresh();
     setVoiceState('speaking','Claude is speaking. Tap to interrupt.');
     await playAudio(result.audio, result.mime);
