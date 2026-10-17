@@ -1,0 +1,10 @@
+.build/
+Generated/
+*.xcodeproj/
+*.ipa
+*.xcarchive/
+node_modules/
+.dev.vars
+*Setup.json
+private/
+__pycache__/

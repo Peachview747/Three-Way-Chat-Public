@@ -1,0 +1,37 @@
+import XCTest
+
+final class ConnectorTests: XCTestCase {
+    func testConnectorLaunchAndSetupCancellation() {
+        let app = XCUIApplication()
+        app.launch()
+        let setup = app.buttons["import-setup"]
+        XCTAssertTrue(setup.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.navigationBars["AI Room Connector"].exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "connection-status").firstMatch.exists)
+        XCTAssertTrue(app.buttons["connection-button"].exists)
+        XCTAssertFalse(app.buttons["connection-button"].isEnabled)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        XCTAssertFalse(app.textViews.firstMatch.exists)
+        XCTAssertFalse(app.buttons["Send message"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "AI Room Connector"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        let help = app.buttons["setup-help"]
+        XCTAssertTrue(help.exists)
+        help.tap()
+        XCTAssertTrue(app.navigationBars["Setup and browser pairing"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["setup-help-first-step"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+        XCTAssertTrue(setup.waitForExistence(timeout: 5))
+
+        XCTAssertFalse(app.buttons["connection-button"].isEnabled)
+        XCTAssertFalse(app.staticTexts["connector-notice"].exists)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(setup.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+}
