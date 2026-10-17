@@ -6,6 +6,7 @@ import WebSocket from 'ws';
 import {ConversationStore} from './store.mjs';
 import {CLIProviders} from './providers.mjs';
 import {Voice} from './voice.mjs';
+import {createControlServer,readKey} from './control.mjs';
 const exec=promisify(execFile),PROTOCOL='three-way-host/1';
 const configPath=process.env.AI_ROOM_CONFIG||'/etc/ai-room/host.json',dataDir=process.env.AI_ROOM_DATA_DIR||'/var/lib/ai-room';
 const config=JSON.parse(await readFile(configPath,'utf8'));validate(config);
@@ -16,13 +17,16 @@ const voice=new Voice();
 const voiceReady=await voice.available();
 if(voiceReady)voice.start();else console.error('Voice tools not found; AI Room runs text-only.');
 const store=new ConversationStore(join(dataDir,'conversations.json'),providers,data=>backup(data,config.backupRepoPath),voiceReady?voice:null);
-let attempt=0,stopping=false;
+let attempt=0,stopping=false,relayConnected=false;
+// The Video Pilot portal reaches AI Room and Pi Health through this local API.
+const controlKey=await readKey();
+if(controlKey)createControlServer({store,key:controlKey,relay:()=>relayConnected});else console.error('No /opt/pi-control/key; the portal cannot reach AI Room.');
 
 function connect(){
   const url=new URL('api/phone',config.server);url.protocol='wss:';
   const ws=new WebSocket(url,{headers:{Authorization:`Bearer ${config.phoneKey}`},maxPayload:4_000_000,handshakeTimeout:15_000});
   let heartbeat,lastPong=0;
-  ws.on('open',()=>{attempt=0;lastPong=Date.now();console.log('Connected to AI Room Worker.');heartbeat=setInterval(()=>{if(Date.now()-lastPong>45_000){console.error('AI Room heartbeat timed out. Reconnecting…');return ws.terminate()}if(ws.readyState===WebSocket.OPEN)ws.send('ping')},20_000)});
+  ws.on('open',()=>{attempt=0;relayConnected=true;lastPong=Date.now();console.log('Connected to AI Room Worker.');heartbeat=setInterval(()=>{if(Date.now()-lastPong>45_000){console.error('AI Room heartbeat timed out. Reconnecting…');return ws.terminate()}if(ws.readyState===WebSocket.OPEN)ws.send('ping')},20_000)});
   ws.on('message',raw=>{const text=raw.toString();if(text==='pong'){lastPong=Date.now();return}let body;try{body=JSON.parse(text)}catch{return ws.close(1008,'Invalid relay message')}
     if(body.type==='hello'&&body.protocol===PROTOCOL)return ws.send(JSON.stringify({type:'ready',protocol:PROTOCOL}));
     if(body.type==='connected')return;
@@ -33,7 +37,7 @@ function connect(){
     }
   });
   ws.on('error',error=>console.error('Relay:',error.message));
-  ws.on('close',()=>{clearInterval(heartbeat);if(!stopping){const delay=Math.min(30_000,1000*2**Math.min(attempt++,5));console.log(`Reconnecting in ${delay/1000}s…`);setTimeout(connect,delay)}});
+  ws.on('close',()=>{relayConnected=false;clearInterval(heartbeat);if(!stopping){const delay=Math.min(30_000,1000*2**Math.min(attempt++,5));console.log(`Reconnecting in ${delay/1000}s…`);setTimeout(connect,delay)}});
 }
 connect();
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{stopping=true;voice.stop();process.exit(0)});

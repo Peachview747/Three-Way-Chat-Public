@@ -3,6 +3,15 @@ let pendingSend = null, room = localStorage.getItem('threeway-room') || '', curr
 const $ = id => document.getElementById(id);
 const notice = text => { $('notice').textContent = text; };
 const native = !!window.webkit?.messageHandlers?.threeway;
+// Inside the Video Pilot portal the same page talks to /api/airoom/ and uses
+// the portal's PIN (its device key) instead of AI Room's own sign-in.
+const API_BASE = document.querySelector('meta[name="api-base"]')?.content || '/api/';
+const IN_PORTAL = document.querySelector('meta[name="in-portal"]')?.content === '1';
+function portalHeaders(headers = {}) {
+  if (!IN_PORTAL) return headers;
+  let key = ''; try { key = localStorage.getItem('vp-device-key') || ''; } catch {}
+  return key ? {...headers, 'x-vp-device': key} : headers;
+}
 let pairingPrompted = false;
 const waiting = new Map();
 window.threeWayReceive = encoded => {
@@ -21,12 +30,14 @@ async function api(action, body = {}) {
     window.webkit.messageHandlers.threeway.postMessage({id, action, body});
   });
   const read = action === 'state' || action === 'export';
-  const response = await fetch('/api/' + action + (action === 'state' ? '?room=' + encodeURIComponent(body.room || '') : ''), {
+  const response = await fetch(API_BASE + action + (action === 'state' ? '?room=' + encodeURIComponent(body.room || '') : ''), {
     method: read ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-    ...(read ? {} : {headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)})
+    headers: portalHeaders(read ? {} : {'Content-Type':'application/json'}), ...(read ? {} : {body: JSON.stringify(body)})
   });
   const result = await response.json();
   if (!response.ok) {
+    // The portal's PIN screen lives on the portal page.
+    if (response.status === 401 && IN_PORTAL) { location.href = '/'; throw new Error('Enter the PIN.'); }
     if (response.status === 401 && !pairingPrompted) { pairingPrompted = true; $('pairing').showModal(); }
     throw new Error(result.error || 'Request failed.');
   }
@@ -402,6 +413,11 @@ $('voice-mute').onclick = () => {
 };
 for (const id of ['talk','talk-header','talk-welcome']) $(id).onclick = () => void startVoice();
 
+if (IN_PORTAL) {
+  // A way back to the portal's services, where the brand link would go.
+  const back = $('to-services'); back.hidden = false; back.onclick = () => { location.href = '/'; };
+  document.documentElement.classList.add('in-portal');
+}
 async function start() {
   if (!native && location.hash) history.replaceState(null,'',location.pathname);
   await refresh();
