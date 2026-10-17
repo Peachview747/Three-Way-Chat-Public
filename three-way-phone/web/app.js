@@ -9,7 +9,7 @@ const API_BASE = document.querySelector('meta[name="api-base"]')?.content || '/a
 const IN_PORTAL = document.querySelector('meta[name="in-portal"]')?.content === '1';
 function portalHeaders(headers = {}) {
   if (!IN_PORTAL) return headers;
-  let key = ''; try { key = localStorage.getItem('vp-device-key') || ''; } catch {}
+  let key = ''; try { key = sessionStorage.getItem('vp-device-key') || ''; } catch {}
   return key ? {...headers, 'x-vp-device': key} : headers;
 }
 let pairingPrompted = false;
