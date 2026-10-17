@@ -170,11 +170,18 @@ function drawVoiceOrb(now) {
     bars.push([size * 0.1 + i * (width + gap), size / 2 - height / 2, width, height]);
   }
   ctx.clearRect(0, 0, size, size);
+  // The spark always shows faintly; bars that cover it show it in full black.
+  const scale = size * 0.5 / 94;
+  ctx.save();
+  ctx.translate(size / 2 - 47 * scale, size / 2 - 47 * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#4b5a52';
+  ctx.fill(SPARK);
+  ctx.restore();
   ctx.save();
   ctx.beginPath();
   for (const [x, y, w, h] of bars) ctx.rect(x, y, w, h);
   ctx.clip();
-  const scale = size * 0.5 / 94;
   ctx.translate(size / 2 - 47 * scale, size / 2 - 47 * scale);
   ctx.scale(scale, scale);
   ctx.fillStyle = '#000';
