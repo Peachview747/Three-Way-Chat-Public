@@ -6,7 +6,8 @@ import WebSocket from 'ws';
 import {ConversationStore} from './store.mjs';
 import {CLIProviders} from './providers.mjs';
 import {Voice} from './voice.mjs';
-import {createControlServer,readKey} from './control.mjs';
+import {createControlServer,readKey,health} from './control.mjs';
+import {Alerts} from './alerts.mjs';
 const exec=promisify(execFile),PROTOCOL='three-way-host/1';
 const configPath=process.env.AI_ROOM_CONFIG||'/etc/ai-room/host.json',dataDir=process.env.AI_ROOM_DATA_DIR||'/var/lib/ai-room';
 const config=JSON.parse(await readFile(configPath,'utf8'));validate(config);
@@ -20,7 +21,8 @@ const store=new ConversationStore(join(dataDir,'conversations.json'),providers,d
 let attempt=0,stopping=false,relayConnected=false;
 // The Video Pilot portal reaches AI Room and Pi Health through this local API.
 const controlKey=await readKey();
-if(controlKey)createControlServer({store,key:controlKey,relay:()=>relayConnected});else console.error('No /opt/pi-control/key; the portal cannot reach AI Room.');
+const alerts=new Alerts({health:()=>health({store,relay:()=>relayConnected})}).start();
+if(controlKey)createControlServer({store,key:controlKey,relay:()=>relayConnected,alerts,voice:voiceReady?voice:null});else console.error('No /opt/pi-control/key; the portal cannot reach AI Room.');
 
 function connect(){
   const url=new URL('api/phone',config.server);url.protocol='wss:';

@@ -87,7 +87,7 @@ async function speedTest() {
 
 export async function readKey(file='/opt/pi-control/key'){try{const key=(await readFile(file,'utf8')).trim();return key.length>=32?key:null}catch{return null}}
 
-export function createControlServer({store,key,relay=()=>null,port=5020,host='127.0.0.1'}) {
+export function createControlServer({store,key,relay=()=>null,alerts=null,voice=null,port=5020,host='127.0.0.1'}) {
   const expected=Buffer.from(key);
   return http.createServer(async(req,res)=>{
     const reply=(status,body)=>{const bytes=Buffer.from(JSON.stringify(body));res.writeHead(status,{'content-type':'application/json; charset=utf-8','content-length':bytes.length,'cache-control':'no-store'});res.end(bytes)};
@@ -102,7 +102,16 @@ export function createControlServer({store,key,relay=()=>null,port=5020,host='12
       const room=url.pathname.match(/^\/room\/([a-z]+)$/);
       if(room){const result=await store.handle(room[1],body);return reply(result.status,result.body)}
       if(url.pathname==='/health')return reply(200,await health({store,relay}));
-      if(url.pathname==='/actions')return reply(200,{actions:Object.entries(ACTIONS).map(([id,{label,confirm}])=>({id,label,confirm:Boolean(confirm)}))});
+      // Spoken alerts: new ones since an id, and any short text in Claude's voice.
+      if(url.pathname==='/alerts')return reply(200,alerts?alerts.since(body.since):{alerts:[],latest:0});
+      if(url.pathname==='/say') {
+        if(!voice)return reply(503,{error:'Voice is not set up on this Raspberry Pi.'});
+        const text=String(body.text||'').slice(0,400);
+        if(!text.trim())return reply(400,{error:'Nothing to say.'});
+        return reply(200,{audio:await voice.speak(text,body.voice),mime:'audio/mpeg'});
+      }
+      if(url.pathname==='/action'&&body.id==='test-alert'&&alerts){alerts.add('This is a test alert from your Pi.','test');return reply(200,{ok:true,output:'Test alert sent. Any open portal page will say it within 20 seconds.'})}
+      if(url.pathname==='/actions')return reply(200,{actions:[...(alerts?[{id:'test-alert',label:'Test spoken alert',confirm:false}]:[]),...Object.entries(ACTIONS).map(([id,{label,confirm}])=>({id,label,confirm:Boolean(confirm)}))]});
       if(url.pathname==='/action') {
         const action=ACTIONS[body.id];
         if(!action)return reply(404,{error:'Unknown action.'});

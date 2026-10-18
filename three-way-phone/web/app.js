@@ -412,6 +412,8 @@ $('voice-mute').onclick = () => {
   if (voice.state === 'listening' || voice.state === 'paused' || $('voice').dataset.state === 'hearing') listen();
 };
 for (const id of ['talk','talk-header','talk-welcome']) $(id).onclick = () => void startVoice();
+// Portal alerts stay silent (banner only) while Claude is listening or talking.
+globalThis.videoPilotAlertsQuiet = () => voice.active;
 
 if (IN_PORTAL) {
   // The portal's Apps switcher (apps-menu.js, added by the portal) takes the
