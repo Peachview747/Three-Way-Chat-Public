@@ -1,0 +1,38 @@
+name: AI Room Raspberry Pi 5 host
+on:
+  push:
+    branches: ['codex/three-way-phone-link']
+    paths: ['three-way-phone/pi-host/**', 'three-way-phone/cloudflare/**', 'three-way-phone/web/**', 'three-way-phone/tests/**', '.github/workflows/ai-room-pi.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ai-room-pi-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            three-way-phone/package-lock.json
+            three-way-phone/pi-host/package-lock.json
+      - name: Verify ARM64 runner
+        run: test "$(uname -m)" = aarch64
+      - name: Test Raspberry Pi host
+        working-directory: three-way-phone/pi-host
+        run: npm ci && npm test
+      - name: Test Cloudflare relay
+        working-directory: three-way-phone
+        run: npm ci && npm test
+      - name: Validate installer and service files
+        run: |
+          bash -n three-way-phone/pi-host/install.sh
+          bash -n three-way-phone/pi-host/ai-room-login
+          bash -n three-way-phone/pi-host/configure-github-backup.sh
+          test -s three-way-phone/pi-host/ai-room.service

@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+
+cmdline=/boot/firmware/cmdline.txt
+case "${1:-status}" in
+  status)
+    echo 'Current mounts:'
+    for path in / /boot/firmware /srv/pi-data; do
+      findmnt -o TARGET,SOURCE,FSTYPE,OPTIONS --mountpoint "$path" || true
+    done
+    if grep -qw 'overlayroot=tmpfs:recurse=0' "$cmdline"; then
+      echo 'Next boot: protected OS, persistent data'
+    else
+      echo 'Next boot: writable OS (maintenance)'
+    fi
+    ;;
+  maintenance|protect)
+    [[ $EUID == 0 ]] || { echo 'Run with sudo.' >&2; exit 1; }
+    mountpoint -q /srv/pi-data || { echo 'Persistent data is not mounted; refusing to change boot mode.' >&2; exit 1; }
+    [[ $(findmnt -n -o FSTYPE /srv/pi-data) == ext4 ]] || exit 1
+    mount -o remount,rw /boot/firmware
+    cp -a "$cmdline" /srv/pi-data/cmdline.before-mode-change.txt
+    # Only change overlayroot; preserve the root identifier and other boot options.
+    sed -i -E 's/(^| )overlayroot=[^ ]+ */\1/g; s/^ +//; s/ +$//' "$cmdline"
+    if [[ $1 == protect ]]; then
+      sed -i 's/^/overlayroot=tmpfs:recurse=0 /' "$cmdline"
+    fi
+    sync
+    if [[ $1 == protect ]] || [[ $(findmnt -n -o FSTYPE /) == overlay ]]; then
+      mount -o remount,ro /boot/firmware
+    fi
+    if [[ $1 == maintenance ]] && [[ $(findmnt -n -o FSTYPE /) != overlay ]]; then
+      echo 'Maintenance is active; OS and boot files are writable. Use steady power for updates.'
+      echo 'After updates: sudo pi-storage protect && sudo reboot'
+    else
+      echo "Next boot mode: $1. Run sudo reboot when ready."
+      if [[ $1 == maintenance ]]; then
+        echo 'After reboot, run sudo pi-storage maintenance again to unlock boot files for kernel updates.'
+      fi
+    fi
+    ;;
+  *) echo 'Usage: pi-storage [status|maintenance|protect]' >&2; exit 2 ;;
+esac

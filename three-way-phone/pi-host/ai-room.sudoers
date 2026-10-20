@@ -1,0 +1,2 @@
+# Optional full local administration, explicitly enabled by the owner.
+ai-room ALL=(ALL:ALL) NOPASSWD: ALL
