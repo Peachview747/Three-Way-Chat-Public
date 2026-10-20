@@ -21,8 +21,12 @@ const store=new ConversationStore(join(dataDir,'conversations.json'),providers,d
 let attempt=0,stopping=false,relayConnected=false;
 // The Video Pilot portal reaches AI Room and Pi Health through this local API.
 const controlKey=await readKey();
-const alerts=new Alerts({health:()=>health({store,relay:()=>relayConnected})}).start();
-if(controlKey)createControlServer({store,key:controlKey,relay:()=>relayConnected,alerts,voice:voiceReady?voice:null});else console.error('No /opt/pi-control/key; the portal cannot reach AI Room.');
+// The old standalone AI Room site is shut down (AI Room lives in the Video Pilot
+// portal now). AI_ROOM_SITE=on brings the connection back.
+const siteOn=process.env.AI_ROOM_SITE==='on';
+const relay=()=>siteOn?relayConnected:null;
+const alerts=new Alerts({health:()=>health({store,relay})}).start();
+if(controlKey)createControlServer({store,key:controlKey,relay,alerts,voice:voiceReady?voice:null});else console.error('No /opt/pi-control/key; the portal cannot reach AI Room.');
 
 function connect(){
   const url=new URL('api/phone',config.server);url.protocol='wss:';
@@ -41,7 +45,7 @@ function connect(){
   ws.on('error',error=>console.error('Relay:',error.message));
   ws.on('close',()=>{relayConnected=false;clearInterval(heartbeat);if(!stopping){const delay=Math.min(30_000,1000*2**Math.min(attempt++,5));console.log(`Reconnecting in ${delay/1000}s…`);setTimeout(connect,delay)}});
 }
-connect();
+if(siteOn)connect();else console.log('Old AI Room site disconnected; AI Room runs inside the portal. (AI_ROOM_SITE=on reconnects it.)');
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{stopping=true;voice.stop();process.exit(0)});
 
 async function backup(data,path){
