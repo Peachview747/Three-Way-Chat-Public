@@ -53,7 +53,7 @@ function render(state) {
     $('rooms').replaceChildren();
     for (const r of state.rooms) {
       const button = document.createElement('button'); button.textContent = r.title; button.title = r.title; button.className = r.id === room ? 'active' : '';
-      button.onclick = () => { room = r.id; localStorage.setItem('threeway-room',room); lastMessages = ''; refresh(); };
+      button.onclick = () => { room = r.id; localStorage.setItem('threeway-room',room); lastMessages = ''; showPanel(null); refresh(); };
       $('rooms').append(button);
     }
     $('room-title').textContent = state.rooms.find(r => r.id === room)?.title || 'Your conversation'; lastRooms = roomsKey;
@@ -66,7 +66,6 @@ function render(state) {
   const messagesKey = JSON.stringify(state.messages);
   if (messagesKey !== lastMessages) {
     const nearBottom = $('chat').scrollHeight - $('chat').scrollTop - $('chat').clientHeight < 130;
-    $('welcome').hidden = state.messages.length > 0;
     $('messages').replaceChildren();
     for (const m of state.messages) {
       const article = document.createElement('article'); article.className = 'message ' + m.author + ' ' + m.status;
@@ -82,12 +81,12 @@ function render(state) {
     }
     if (nearBottom || !lastMessages) $('chat').scrollTop = $('chat').scrollHeight;
     lastMessages = messagesKey;
+    showExchange(state.messages);
   }
   $('send').disabled = state.busy || state.login_busy;
   $('stop').hidden = !state.busy || voice.active;
   $('input').disabled = state.busy;
   $('new').disabled = state.busy;
-  for (const id of ['talk','talk-header','talk-welcome']) $(id).hidden = !state.voice?.available;
 }
 async function refresh() {
   if (fetching) return;
@@ -121,11 +120,42 @@ $('claude-login').onclick = async () => {
 };
 $('connections-button').onclick = () => {
   if (!native && !current) $('pairing').showModal();
-  else $('connections').hidden = !$('connections').hidden;
+  else showPanel($('connections').hidden ? 'connections' : null);
 };
+// Past chats (a drawer), typing (a panel at the bottom) and settings stay out
+// of the way until asked for; only one is open at a time.
+const PANELS = {connections:'connections-button', drawer:'history-button', 'type-panel':'type-button'};
+function showPanel(name) {
+  for (const [id, button] of Object.entries(PANELS)) {
+    $(id).hidden = id !== name;
+    $(button).setAttribute('aria-expanded', String(id === name));
+  }
+  if (name === 'drawer') $('chat').scrollTop = $('chat').scrollHeight;
+  if (name === 'type-panel') $('input').focus();
+}
+$('history-button').onclick = () => showPanel($('drawer').hidden ? 'drawer' : null);
+$('drawer-close').onclick = () => showPanel(null);
+$('type-button').onclick = () => showPanel($('type-panel').hidden ? 'type-panel' : null);
+// The last thing you said and Claude's answer to it, as big captions under the
+// orb. While a spoken turn is under way the live captions are left alone.
+function showExchange(messages) {
+  const hasAny = messages.length > 0;
+  $('voice-hint').hidden = hasAny;
+  if (voice.speaking || voice.state === 'thinking') return;
+  let asked = -1;
+  for (let i = messages.length - 1; i >= 0; i--) if (messages[i].author === 'user') { asked = i; break; }
+  const reply = messages.slice(asked + 1).reverse().find(m => m.author === 'claude');
+  showHeard(asked >= 0 ? messages[asked].text : '', true);
+  showReply(reply ? (reply.text || (reply.status === 'working' ? 'Thinking…' : '')) : '');
+}
+function showReply(text) {
+  $('last-reply').textContent = text;
+  $('reply-caption').hidden = !text;
+  $('last-reply').scrollTop = 0;
+}
 $('about-button').onclick = () => $('about').showModal();
 $('export').onclick = async () => {
-  try { const result = await api('export'); if (native) { await api('share'); return; } const url = URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'})); const link = document.createElement('a'); link.href=url; link.download='ai-room-conversations.json'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+  try { const result = await api('export'); if (native) { await api('share'); return; } const url = URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'})); const link = document.createElement('a'); link.href=url; link.download='claude-conversations.json'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
   catch(e) { notice('Could not export conversations.'); }
 };
 async function pair(pin) {
@@ -167,7 +197,7 @@ let orbLevel = 0;
 function drawVoiceOrb(now) {
   requestAnimationFrame(drawVoiceOrb);
   const canvas = $('voice-bars');
-  if (!voice.active || !canvas) return;
+  if (!voice.active || !canvas) { if (orbLevel) { orbLevel = 0; $('voice-orb').style.setProperty('--level', 0); } return; }
   const ctx = canvas.getContext('2d'), size = canvas.width, t = now / 1000;
   let amp = voice.amp;
   if (voice.state === 'thinking' || voice.state === 'speaking') amp = 0.35 + 0.25 * Math.sin(t * 3.2);
@@ -175,15 +205,16 @@ function drawVoiceOrb(now) {
   // Ease toward the target so the bars glide instead of jumping with each audio frame.
   orbLevel += (amp - orbLevel) * 0.12;
   amp = orbLevel;
-  const gap = size * 0.05, width = (size * 0.8 - gap * (BARS - 1)) / BARS, maxHeight = size * 0.8;
+  $('voice-orb').style.setProperty('--level', amp.toFixed(3));
+  const gap = size * 0.035, width = (size * 0.5 - gap * (BARS - 1)) / BARS, maxHeight = size * 0.5;
   const bars = [];
   for (let i = 0; i < BARS; i++) {
     const wave = 0.55 + 0.45 * Math.sin(t * 5 + i * 1.3);
     const height = Math.max(width, maxHeight * amp * wave);
-    bars.push([size * 0.1 + i * (width + gap), size / 2 - height / 2, width, height]);
+    bars.push([size * 0.25 + i * (width + gap), size / 2 - height / 2, width, height]);
   }
   ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = 'rgba(217, 138, 99, 0.35)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
   for (const [x, y, w, h] of bars) {
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(x, y, w, h, w / 2); else ctx.rect(x, y, w, h);
@@ -221,11 +252,12 @@ function setVoiceState(state, text) {
   voice.state = state;
   $('voice').dataset.state = state;
   $('voice-state').textContent = text;
+  $('voice-orb').setAttribute('aria-label', voice.active ? text : 'Talk to Claude');
 }
 async function startVoice() {
   if (voice.active) return;
   if (!navigator.mediaDevices?.getUserMedia) { notice('This browser does not let pages use the microphone.'); return; }
-  $('voice').hidden = false; showHeard('', false);
+  showPanel(null); document.body.classList.add('voice-on'); showHeard('', false); showReply('');
   setVoiceState('starting','Starting the microphone…');
   // Play something silent inside the tap so later replies are allowed to play.
   audioPlayer().src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='; audioPlayer().play().catch(() => {});
@@ -302,8 +334,8 @@ function hear(samples) {
 const PREVIEW_MS = 2000;
 function showHeard(text, final) {
   $('voice-heard').textContent = text;
-  $('voice-heard').classList.toggle('final', final);
-  $('voice-heard').hidden = !text;
+  $('you-caption').classList.toggle('live', !final);
+  $('you-caption').hidden = !text;
 }
 function previewSpeech() {
   const now = Date.now();
@@ -323,7 +355,7 @@ async function sendTurn(chunks) {
     const heard = (await api('hear',{audio:encodeWav(chunks, voice.context.sampleRate)})).text;
     if (voice.turn !== turn || !voice.active) return;
     if (!heard || !/[a-z0-9]/i.test(heard)) { stopThinkingSound(); showHeard('', false); listen(); return; }
-    showHeard(heard, true);
+    showHeard(heard, true); showReply('');
     const result = await api('voice',{request_id:turn, room, text:heard, voice:voiceChoice()});
     if (voice.turn !== turn || !voice.active) return;
     stopThinkingSound();
@@ -386,13 +418,17 @@ function stopVoice() {
   voice.context?.close().catch(() => {});
   voice.wakeLock?.release?.().catch?.(() => {});
   Object.assign(voice, {stream:null, context:null, source:null, processor:null, chunks:[], preroll:[], levels:[], wakeLock:null});
-  $('voice').hidden = true; setVoiceState('idle','');
+  document.body.classList.remove('voice-on'); setVoiceState('idle','Tap to talk');
   if (current?.busy) post('stop').catch(() => {});
   void refresh();
 }
 $('voice-end').onclick = stopVoice;
 // Tap the orb: interrupt Claude, or stop waiting for a reply, and listen again.
 $('voice-orb').onclick = () => {
+  if (!voice.active) {
+    if (current && !current.voice?.available) { notice('Voice is not available on the Pi right now. You can type instead.'); showPanel('type-panel'); return; }
+    void startVoice(); return;
+  }
   if (voice.state === 'speaking') { try { voice.player.pause(); voice.player.onended?.(); } catch {} return; }
   if (voice.state === 'thinking') { voice.turn = null; stopThinkingSound(); post('stop').catch(() => {}); listen(); return; }
   if (voice.state === 'error') listen();
@@ -402,16 +438,14 @@ $('voice-orb').onclick = () => {
 function setMuted(muted) {
   voice.muted = muted;
   for (const track of voice.stream?.getAudioTracks() || []) track.enabled = !muted;
-  $('voice-mute').textContent = muted ? '🔇 Mic muted · tap to unmute' : '🎤 Mute mic';
+  $('voice-mute').textContent = muted ? 'Unmute mic' : 'Mute mic';
   $('voice-mute').setAttribute('aria-pressed', muted ? 'true' : 'false');
   $('voice-mute').classList.toggle('muted', muted);
-  $('voice').classList.toggle('mic-muted', muted);
 }
 $('voice-mute').onclick = () => {
   setMuted(!voice.muted);
   if (voice.state === 'listening' || voice.state === 'paused' || $('voice').dataset.state === 'hearing') listen();
 };
-for (const id of ['talk','talk-header','talk-welcome']) $(id).onclick = () => void startVoice();
 // Portal alerts stay silent (banner only) while Claude is listening or talking.
 globalThis.videoPilotAlertsQuiet = () => voice.active;
 
